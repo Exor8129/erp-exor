@@ -10,6 +10,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.97.0",
     "antd": "^6.3.0",
+    "internmap": "^2.0.3",
     "jspdf": "^4.2.0",
     "jspdf-autotable": "^5.0.7",
     "lucide-react": "^0.575.0",
