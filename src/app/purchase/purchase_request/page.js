@@ -29,6 +29,8 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
+import { useSearchParams } from "next/navigation";
+import { useEffect } from "react";
 import { supabase } from "../../lib/supabase"; // ✅ updated import
 
 const { Option } = Select;
@@ -45,6 +47,11 @@ export default function PurchaseRequestPage() {
   const [priority, setPriority] = useState(null);
   const [remarks, setRemarks] = useState("");
   const [rate, setRate] = useState(null);
+  const searchParams = useSearchParams();
+  const indentId = searchParams.get("id");
+  const [selectedIndent, setSelectedIndent] = useState(null);
+  const [vendorOptions, setVendorOptions] = useState([]);
+  const [selectedProductDetails, setSelectedProductDetails] = useState(null);
 
   // 🔹 Range Config
   const rangeMap = {
@@ -110,6 +117,15 @@ export default function PurchaseRequestPage() {
 
   const chartData = config.days ? groupedDailyData : monthlyData;
 
+  useEffect(() => {
+  if (indentId) {
+    fetchPurchaseRequestData(indentId);
+  }
+}, [indentId]);
+
+ 
+ 
+ 
   // 🔹 Vendor Table
   const vendorColumns = [
     { title: "Vendor", dataIndex: "vendor" },
@@ -127,6 +143,55 @@ export default function PurchaseRequestPage() {
         preferred ? <Tag color="green">Yes</Tag> : <Tag>No</Tag>,
     },
   ];
+
+  const fetchPurchaseRequestData = async (indentId) => {
+  const { data, error } = await supabase
+    .from("indent")
+    .select(`
+      *,
+      item_master (
+        *,
+        product_inventory (
+          current_stock
+        ),
+        vendor_products (
+          vendors (
+            id,
+            name,
+            rating,
+            is_active
+          )
+        )
+      )
+    `)
+    .eq("id", indentId)
+    .single();
+
+  if (!error && data) {
+    setSelectedIndent(data);
+
+    // Product details
+    setSelectedProductDetails({
+      ...data.item_master,
+      current_stock:
+        data.item_master?.product_inventory?.[0]?.current_stock || 0,
+    });
+
+    // Vendor options
+    const vendors =
+      data.item_master?.vendor_products
+        ?.filter((v) => v.vendors?.is_active)
+        ?.map((v) => ({
+          id: v.vendors.id,
+          name: v.vendors.name,
+          rating: v.vendors.rating,
+        })) || [];
+
+    setVendorOptions(vendors);
+  }
+  // console.log("FULL DATA:", data);
+// console.log("PRODUCT INVENTORY:", data.item_master?.product_inventory);
+};
 
   const vendorData = [
     {
@@ -147,6 +212,7 @@ export default function PurchaseRequestPage() {
     },
   ];
 
+
   const handleNewItemSubmit = (values) => {
     console.log("New Item Request:", values);
     form.resetFields();
@@ -164,10 +230,9 @@ export default function PurchaseRequestPage() {
 
       const { error } = await supabase.from("purchase_requests").insert([
         {
-          item_name: "Mesh Nebulizer - Exor", // make dynamic later
+          item_name: selectedIndent?.item_name ,
           quantity: Number(quantity),
-          rate: 0,
-          vendor_name: vendor,
+          vendor_id: vendor,
           priority_type: priority,
           status: "Pending",
           rate: rate ? Number(rate) : null,
@@ -211,21 +276,21 @@ export default function PurchaseRequestPage() {
           <div>
             <h2 className="text-xl font-semibold flex items-center gap-2">
               <Package size={18} />
-              Mesh Nebulizer - Exor
+              {selectedIndent?.item_name || "Loading..."}
             </h2>
-            <p className="text-gray-500">SKU: EXR-MN-001</p>
+            <p className="text-gray-500">SKU: {selectedIndent?.sku || "N/A"}</p>
           </div>
 
           <Row gutter={16}>
             <Col span={6}>
               <Statistic
                 title="Current Stock"
-                value={42}
+                value={selectedProductDetails?.current_stock || 0}
                 prefix={<Warehouse size={14} />}
               />
             </Col>
             <Col span={6}>
-              <Statistic title="Reorder Level" value={60} />
+              <Statistic title="Reorder Level" value={selectedProductDetails?.reorder_level || 0} />
             </Col>
             <Col span={6}>
               <Statistic title="Pending PO Qty" value={25} />
@@ -242,19 +307,19 @@ export default function PurchaseRequestPage() {
               <Col span={8}>
                 <Statistic
                   title="Requested Quantity"
-                  value={80}
-                  valueStyle={{ color: "#1677ff" }}
+                  value={selectedIndent?.quantity}
+                  styles={{content:{color:"#1677ff"}}}
                 />
               </Col>
 
               <Col span={8}>
                 <p className="text-gray-500 text-sm">Department</p>
-                <p className="font-medium">ICU Department</p>
+                <p className="font-medium">{selectedIndent?.department}</p>
               </Col>
 
               <Col span={8}>
                 <p className="text-gray-500 text-sm">Purpose</p>
-                <p className="font-medium">Emergency Stock Refill</p>
+                <p className="font-medium">{selectedIndent?.purpose}</p>
               </Col>
             </Row>
           </div>
@@ -339,8 +404,11 @@ export default function PurchaseRequestPage() {
               onChange={(value) => setVendor(value)}
               allowClear
             >
-              <Option value="ABC Pharma">ABC Pharma</Option>
-              <Option value="Medi Supplies">Medi Supplies</Option>
+              {vendorOptions.map((v) => (
+                <Option key={v.id} value={v.id}>
+                  {v.name} ⭐ {v.rating}
+                </Option>
+              ))}
             </Select>
           </Col>
 
