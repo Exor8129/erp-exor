@@ -348,30 +348,16 @@
 
 // export default InventoryTable;
 
+
+
+
+
+
 "use client";
 
 import React, { useEffect, useState } from "react";
-import {
-  Table,
-  Tag,
-  Spin,
-  Button,
-  Modal,
-  Form,
-  Input,
-  DatePicker,
-  InputNumber,
-  message,
-  Select,
-  Upload,
-  Tabs,
-} from "antd";
-import {
-  PlusOutlined,
-  SearchOutlined,
-  UploadOutlined,
-  FilterOutlined,
-} from "@ant-design/icons";
+import {Table,Tag,Spin,Button,Modal,Form,Input,DatePicker,InputNumber,message,Select,Upload,Tabs,} from "antd";
+import {PlusOutlined,SearchOutlined,UploadOutlined,FilterOutlined,} from "@ant-design/icons";
 import { supabase } from "../lib/supabase";
 import dayjs from "dayjs";
 import { useRouter } from "next/navigation";
@@ -399,6 +385,9 @@ const InventoryTable = () => {
     fetchDropdownData();
   }, []);
 
+
+
+
   const fetchDropdownData = async () => {
     const { data: items } = await supabase
       .from("item_master")
@@ -420,35 +409,70 @@ const InventoryTable = () => {
     setLoading(false);
   };
 
-  const handleAddIndent = async (values) => {
-    const itemNameString = Array.isArray(values.item_name)
-      ? values.item_name[0]
-      : values.item_name;
-    const formattedDate = values.required_date
-      ? values.required_date.format("YYYY-MM-DD")
-      : null;
 
-    const { error } = await supabase.from("indent").insert([
+// Ensure this is only declared ONCE at the top of your component
+
+const [isModalVisible, setIsModalVisible] = useState(false);
+
+const handleAddIndent = async (values) => {
+  try {
+    // FIX: Extract clean string if the form returns an array
+    const itemNameString = Array.isArray(values.item_name) 
+      ? values.item_name[0] 
+      : values.item_name;
+
+    // 1. Fetch the 'id' from item_master
+    const { data: itemMasterRecord, error: fetchError } = await supabase
+      .from("item_master")
+      .select("id")
+      .eq("item_name", itemNameString)
+      .single();
+
+    // Use fetchError specifically to avoid ReferenceError
+    if (fetchError || !itemMasterRecord) {
+      console.error("Fetch Error:", fetchError);
+      return message.error("Selected item not found in Item Master.");
+    }
+
+    // 2. Insert into the indent table
+    const { error: insertError } = await supabase.from("indent").insert([
       {
-        item_name: itemNameString,
+        item_id: itemMasterRecord.id,
+        item_name: itemNameString, // This will now be saved without brackets
         quantity: values.quantity,
-        required_date: formattedDate,
+        required_date: values.required_date?.format('YYYY-MM-DD'),
         purpose: values.purpose,
         department: values.department,
         status: "Indent Request",
       },
     ]);
 
-    if (!error) {
-      message.success("Indent created successfully");
-      setIsModalOpen(false);
-      form.resetFields();
-      setFileList([]);
-      fetchIndentData();
+    // Check insertError specifically
+    if (insertError) {
+      console.error("Insert Error:", insertError);
+      message.error("Failed to create indent: " + insertError.message);
     } else {
-      message.error("Failed to save indent");
+      message.success("Indent Request created successfully!");
+      
+      // 1. Close the modal first to provide immediate feedback
+      setIsModalOpen(false); 
+      
+      // 2. Clear form fields so they are ready for the next entry
+      form.resetFields(); 
+      setFileList([]); // Clear any uploaded images
+
+      // 3. Trigger the data fetch to sync with Supabase
+      await fetchIndentData(); 
+      
+      // 4. Optional: Clear filters to ensure the new record is visible
+      setSearchText(""); 
+      setActiveTab("All");
     }
-  };
+  } catch (err) {
+    console.error("Unexpected Error:", err);
+    message.error("An unexpected error occurred.");
+  }
+};
 
   // --- FILTER LOGIC ---
   const filteredData = data.filter((item) => {
