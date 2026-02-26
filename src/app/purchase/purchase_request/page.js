@@ -29,7 +29,7 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { supabase } from "../../lib/supabase"; // ✅ updated import
 
@@ -52,7 +52,10 @@ export default function PurchaseRequestPage() {
   const [selectedIndent, setSelectedIndent] = useState(null);
   const [vendorOptions, setVendorOptions] = useState([]);
   const [selectedProductDetails, setSelectedProductDetails] = useState(null);
+  const [existingPRs, setExistingPRs] = useState([]);
+  const [iseditMode, setIsEditMode] = useState(false);
 
+  const router = useRouter();
   // 🔹 Range Config
   const rangeMap = {
     90: { days: 90 },
@@ -118,14 +121,12 @@ export default function PurchaseRequestPage() {
   const chartData = config.days ? groupedDailyData : monthlyData;
 
   useEffect(() => {
-  if (indentId) {
-    fetchPurchaseRequestData(indentId);
-  }
-}, [indentId]);
+    if (indentId) {
+      fetchPurchaseRequestData(indentId);
+      checkExistingPurchaseRequest(indentId);
+    }
+  }, [indentId]);
 
- 
- 
- 
   // 🔹 Vendor Table
   const vendorColumns = [
     { title: "Vendor", dataIndex: "vendor" },
@@ -144,10 +145,31 @@ export default function PurchaseRequestPage() {
     },
   ];
 
+  const checkExistingPurchaseRequest = async (indentId) => {
+    const { data, error } = await supabase
+      .from("purchase_requests")
+      .select("*")
+      .eq("reference", indentId)
+      .single();
+
+    if (!error && data) {
+      setExistingPR(data);
+      setIsEditMode(true);
+
+      // Pre-fill form
+      setVendor(data.vendor_id);
+      setQuantity(data.quantity);
+      setPriority(data.priority_type);
+      setRate(data.rate);
+      setRemarks(data.remarks);
+    }
+  };
+
   const fetchPurchaseRequestData = async (indentId) => {
-  const { data, error } = await supabase
-    .from("indent")
-    .select(`
+    const { data, error } = await supabase
+      .from("indent")
+      .select(
+        `
       *,
       item_master (
         *,
@@ -163,35 +185,34 @@ export default function PurchaseRequestPage() {
           )
         )
       )
-    `)
-    .eq("id", indentId)
-    .single();
+    `,
+      )
+      .eq("id", indentId)
+      .single();
 
-  if (!error && data) {
-    setSelectedIndent(data);
+    if (!error && data) {
+      setSelectedIndent(data);
 
-    // Product details
-    setSelectedProductDetails({
-      ...data.item_master,
-      current_stock:
-        data.item_master?.product_inventory?.[0]?.current_stock || 0,
-    });
+      // Product details
+      setSelectedProductDetails({
+        ...data.item_master,
+        current_stock:
+          data.item_master?.product_inventory?.[0]?.current_stock || 0,
+      });
 
-    // Vendor options
-    const vendors =
-      data.item_master?.vendor_products
-        ?.filter((v) => v.vendors?.is_active)
-        ?.map((v) => ({
-          id: v.vendors.id,
-          name: v.vendors.name,
-          rating: v.vendors.rating,
-        })) || [];
+      // Vendor options
+      const vendors =
+        data.item_master?.vendor_products
+          ?.filter((v) => v.vendors?.is_active)
+          ?.map((v) => ({
+            id: v.vendors.id,
+            name: v.vendors.name,
+            rating: v.vendors.rating,
+          })) || [];
 
-    setVendorOptions(vendors);
-  }
-  // console.log("FULL DATA:", data);
-// console.log("PRODUCT INVENTORY:", data.item_master?.product_inventory);
-};
+      setVendorOptions(vendors);
+    }
+  };
 
   const vendorData = [
     {
@@ -212,50 +233,130 @@ export default function PurchaseRequestPage() {
     },
   ];
 
-
   const handleNewItemSubmit = (values) => {
     console.log("New Item Request:", values);
     form.resetFields();
     setIsNewItemModalOpen(false);
   };
 
+  // const handleSubmit = async () => {
+  //   if (!vendor || !quantity || !priority) {
+  //     alert("Please fill all required fields");
+  //     return;
+  //   }
+
+  //   try {
+  //     setLoading(true);
+
+  //     const { error } = await supabase.from("purchase_requests").insert([
+  //       {
+  //         item_name: selectedIndent?.item_name,
+  //         quantity: Number(quantity),
+  //         vendor_id: vendor,
+  //         priority_type: priority,
+  //         status: "Pending",
+  //         rate: rate ? Number(rate) : null,
+  //         reference: selectedIndent?.id,
+  //       },
+  //     ]);
+
+  //     if (error) throw error;
+
+  //     // 2️⃣ Update Indent Status
+  //     const { error: updateError } = await supabase
+  //       .from("indent") // 👈 your indent table name
+  //       .update({ status: "Purchase Requested" })
+  //       .eq("id", selectedIndent?.id);
+
+  //     if (updateError) throw updateError;
+
+  //     alert("Purchase Request Created Successfully");
+
+  //     // 3️⃣ Navigate to Indent Page
+  //     router.push("/indent");
+  //     // 👆 change path if your indent route is different
+
+  //     // Reset fields
+  //     setVendor(null);
+  //     setQuantity(null);
+  //     setPriority(null);
+  //     setRate("");
+  //     setRemarks("");
+  //   } catch (err) {
+  //     alert(err.message);
+  //   } finally {
+  //     setLoading(false);
+  //   }
+  // };
+
   const handleSubmit = async () => {
-    if (!vendor || !quantity || !priority) {
-      alert("Please fill all required fields");
-      return;
-    }
+  if (!vendor || !quantity || !priority) {
+    alert("Please fill all required fields");
+    return;
+  }
 
-    try {
-      setLoading(true);
+  try {
+    setLoading(true);
 
-      const { error } = await supabase.from("purchase_requests").insert([
-        {
-          item_name: selectedIndent?.item_name ,
-          quantity: Number(quantity),
+    if (isEditMode) {
+      // 🔁 UPDATE EXISTING PR
+      const { error } = await supabase
+        .from("purchase_requests")
+        .update({
           vendor_id: vendor,
+          quantity: Number(quantity),
           priority_type: priority,
-          status: "Pending",
           rate: rate ? Number(rate) : null,
-        },
-      ]);
+          remarks: remarks,
+        })
+        .eq("id", existingPR.id);
 
       if (error) throw error;
 
+      alert("Purchase Request Updated Successfully");
+
+      // 👉 Navigate to approval page
+      router.push("/purchase_approval");
+
+    } else {
+      // ➕ INSERT NEW PR
+      const { error } = await supabase
+        .from("purchase_requests")
+        .insert([
+          {
+            item_name: selectedIndent?.item_name,
+            quantity: Number(quantity),
+            vendor_id: vendor,
+            priority_type: priority,
+            status: "Pending",
+            rate: rate ? Number(rate) : null,
+            reference: selectedIndent?.id,
+            remarks: remarks,
+          },
+        ]);
+
+      if (error) throw error;
+
+      // Update indent status
+      const { error: updateError } = await supabase
+        .from("indent")
+        .update({ status: "Purchase Requested" })
+        .eq("id", selectedIndent?.id);
+
+      if (updateError) throw updateError;
+
       alert("Purchase Request Created Successfully");
 
-      // Reset fields
-      setVendor(null);
-      setQuantity(null);
-      setPriority(null);
-      setRate("");
-      setRemarks("");
-    } catch (err) {
-      alert(err.message);
-    } finally {
-      setLoading(false);
+      router.push("/indent");
     }
-  };
 
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    setLoading(false);
+  }
+};
+  
   return (
     <div className="p-6 bg-gray-50 min-h-screen space-y-6">
       {/* HEADER */}
@@ -290,7 +391,10 @@ export default function PurchaseRequestPage() {
               />
             </Col>
             <Col span={6}>
-              <Statistic title="Reorder Level" value={selectedProductDetails?.reorder_level || 0} />
+              <Statistic
+                title="Reorder Level"
+                value={selectedProductDetails?.reorder_level || 0}
+              />
             </Col>
             <Col span={6}>
               <Statistic title="Pending PO Qty" value={25} />
@@ -308,7 +412,7 @@ export default function PurchaseRequestPage() {
                 <Statistic
                   title="Requested Quantity"
                   value={selectedIndent?.quantity}
-                  styles={{content:{color:"#1677ff"}}}
+                  styles={{ content: { color: "#1677ff" } }}
                 />
               </Col>
 
