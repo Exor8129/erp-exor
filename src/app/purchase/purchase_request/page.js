@@ -150,10 +150,10 @@ export default function PurchaseRequestPage() {
       .from("purchase_requests")
       .select("*")
       .eq("reference", indentId)
-      .single();
+      .maybeSingle();
 
     if (!error && data) {
-      setExistingPR(data);
+      setExistingPRs(data);
       setIsEditMode(true);
 
       // Pre-fill form
@@ -298,7 +298,7 @@ export default function PurchaseRequestPage() {
   try {
     setLoading(true);
 
-    if (isEditMode) {
+    if (iseditMode) {
       // 🔁 UPDATE EXISTING PR
       const { error } = await supabase
         .from("purchase_requests")
@@ -309,14 +309,14 @@ export default function PurchaseRequestPage() {
           rate: rate ? Number(rate) : null,
           remarks: remarks,
         })
-        .eq("id", existingPR.id);
+        .eq("id", existingPRs.id);
 
       if (error) throw error;
 
       alert("Purchase Request Updated Successfully");
 
       // 👉 Navigate to approval page
-      router.push("/purchase_approval");
+      router.push("/purchase/purchase_item_approval");
 
     } else {
       // ➕ INSERT NEW PR
@@ -579,7 +579,7 @@ export default function PurchaseRequestPage() {
           </Button>
 
           <Button type="primary" loading={loading} onClick={handleSubmit}>
-            Submit
+            {iseditMode ? "Edit" : "Submit"}
           </Button>
         </div>
       </Card>
