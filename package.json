@@ -10,6 +10,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.97.0",
     "antd": "^6.3.0",
+    "axios": "^1.13.6",
     "internmap": "^2.0.3",
     "jspdf": "^4.2.0",
     "jspdf-autotable": "^5.0.7",
@@ -17,7 +18,8 @@
     "next": "16.1.6",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "recharts": "^3.7.0"
+    "recharts": "^3.7.0",
+    "xml2js": "^0.6.2"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
