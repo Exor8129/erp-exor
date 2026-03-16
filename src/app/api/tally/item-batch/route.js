@@ -3,146 +3,111 @@ import xml2js from "xml2js";
 
 const TALLY_URL = "http://localhost:9000";
 
-/* ===============================
-   HELPERS
-=============================== */
+export async function GET(request) {
+  const { searchParams } = new URL(request.url);
 
-async function fetchFromTally(xmlRequest) {
-  const response = await fetch(TALLY_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/xml" },
-    body: xmlRequest,
-  });
+  const itemName =
+    searchParams.get("name") || "On Call Plus Test Strip";
 
-  const xml = await response.text();
+  const batchName =
+    searchParams.get("batch") || "1695269s";
 
-  const parser = new xml2js.Parser({ explicitArray: false });
-  const parsed = await parser.parseStringPromise(xml);
-
-  console.log("✅ RAW TALLY RESPONSE:\n", xml);
-
-  console.log(
-    "✅ PARSED OBJECT:\n",
-    JSON.stringify(parsed, null, 2)
-  );
-
-  return parsed;
-}
-
-function makeArray(data) {
-  if (!data) return [];
-  return Array.isArray(data) ? data : [data];
-}
-
-function clean(value) {
-  if (!value) return "";
-  if (typeof value === "string") return value.trim();
-  if (typeof value === "object" && value._) return String(value._).trim();
-  return String(value).trim();
-}
-
-/* ===============================
-   MAIN API
-=============================== */
-
-export async function GET() {
-  try {
-    const xmlRequest = `
+  let xmlRequest = `
 <ENVELOPE>
-  <HEADER>
-    <VERSION>1</VERSION>
-    <TALLYREQUEST>Export Data</TALLYREQUEST>
-    <TYPE>Collection</TYPE>
-    <ID>VoucherCollection</ID>
-  </HEADER>
-  <BODY>
-    <DESC>
-      <STATICVARIABLES>
-        <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
-        <SVFROMDATE>20260101</SVFROMDATE>
-        <SVTODATE>20260331</SVTODATE>
-      </STATICVARIABLES>
-      <TDL>
-        <TDLMESSAGE>
-          <COLLECTION NAME="VoucherCollection">
-            <TYPE>Voucher</TYPE>
-            <FILTER>ItemFilter</FILTER>
-            <FETCH>Date</FETCH>
-            <FETCH>VoucherTypeName</FETCH>
-            <FETCH>InventoryEntries.*</FETCH>
-            <FETCH>InventoryEntries.BatchAllocations.*</FETCH>
-          </COLLECTION>
+ <HEADER>
+  <VERSION>1</VERSION>
+  <TALLYREQUEST>Export Data</TALLYREQUEST>
+  <TYPE>Collection</TYPE>
+  <ID>BatchStockCollection</ID>
+ </HEADER>
 
-          <SYSTEM TYPE="Formulae" NAME="ItemFilter">
-            ANY $InventoryEntries : $StockItemName = "Bourbon Biscuits"
-          </SYSTEM>
-        </TDLMESSAGE>
-      </TDL>
-    </DESC>
-  </BODY>
-</ENVELOPE>
-`;
+ <BODY>
+  <DESC>
 
-    const result = await fetchFromTally(xmlRequest);
+   <STATICVARIABLES>
+    <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+    <SVCURRENTCOMPANY>EXOR MEDICAL SYSTEMS</SVCURRENTCOMPANY>
+   </STATICVARIABLES>
 
-    const collection =
-  result?.ENVELOPE?.BODY?.DATA?.COLLECTION;
+   <TDL>
+    <TDLMESSAGE>
+    <COLLECTION NAME="BatchStockCollection">
+      <TYPE>StockItem</TYPE>
+      <CHILDOF>"${itemName}"</CHILDOF> 
+      <FETCH>Name</FETCH>
+      <FETCH>ClosingBalance</FETCH>
+      <FETCH>BatchAllocations.BatchName</FETCH>
+      <FETCH>BatchAllocations.ClosingBalance</FETCH>
+    </COLLECTION>
+  </TDLMESSAGE>
+   </TDL>
 
-let vouchers = [];
+  </DESC>
+ </BODY>
+</ENVELOPE>`;
 
-if (collection?.VOUCHER) {
-  vouchers = makeArray(collection.VOUCHER);
-}
+  xmlRequest = xmlRequest.replace(/>\s+</g, "><").trim();
 
-if (collection?.["VOUCHER.LIST"]) {
-  vouchers = makeArray(collection["VOUCHER.LIST"]);
-}
-
-console.log("✅ VOUCHER COUNT:", vouchers.length);
-
-    vouchers = makeArray(vouchers);
-
-    const finalData = [];
-
-    vouchers.forEach((voucher) => {
-      const voucherDate = clean(voucher?.DATE);
-      const voucherType = clean(voucher?.VOUCHERTYPENAME);
-
-     const inventoryList = makeArray(
-  voucher?.["ALLINVENTORYENTRIES.LIST"] ||
-  voucher?.["INVENTORYENTRIES.LIST"]
-);
-
-      inventoryList.forEach((entry) => {
-        const itemName = clean(entry?.STOCKITEMNAME);
-
-        const batchList = makeArray(
-          entry?.["BATCHALLOCATIONS.LIST"]
-        );
-
-        batchList.forEach((batch) => {
-          finalData.push({
-            item_name: itemName,
-            voucher_date: voucherDate,
-            voucher_type: voucherType,
-            godown: clean(batch?.GODOWNNAME),
-            batch_name: clean(batch?.BATCHNAME),
-            billed_qty: clean(batch?.BILLEDQTY),
-            actual_qty: clean(batch?.ACTUALQTY),
-            amount: clean(batch?.AMOUNT),
-          });
-        });
-      });
+  try {
+    const response = await fetch(TALLY_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/xml",
+        Accept: "text/xml",
+      },
+      body: xmlRequest,
     });
 
-    console.log("✅ Batch Rows:", finalData.length);
+    const xmlData = await response.text();
 
-    return NextResponse.json({ items: finalData });
+    const parser = new xml2js.Parser({
+      explicitArray: false,
+      tagNameProcessors: [(name) => name.toUpperCase()],
+    });
 
+    const result = await parser.parseStringPromise(xmlData);
+
+    const stockItem =
+      result?.ENVELOPE?.BODY?.DATA?.COLLECTION?.STOCKITEM;
+
+    if (!stockItem) {
+      return NextResponse.json({
+        success: false,
+        message: "Item not found",
+      });
+    }
+
+    const batches =
+      stockItem?.BATCHALLOCATIONS?.LIST;
+
+    if (!batches) {
+      return NextResponse.json({
+        success: false,
+        message: "No batch data found",
+      });
+    }
+
+    const batchList = Array.isArray(batches)
+      ? batches
+      : [batches];
+
+    const selectedBatch = batchList.find(
+      (b) =>
+        b.BATCHNAME?.toLowerCase() ===
+        batchName.toLowerCase()
+    );
+
+    return NextResponse.json({
+      success: true,
+      item: itemName,
+      batch: batchName,
+      quantity:
+        selectedBatch?.CLOSINGBALANCE || "0",
+    });
   } catch (error) {
-    console.error("❌ Tally Error:", error);
+    console.error("Error:", error.message);
     return NextResponse.json(
-      { items: [], error: "Tally Fetch Failed" },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }
