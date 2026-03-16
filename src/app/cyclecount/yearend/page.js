@@ -536,7 +536,7 @@ export default function YearEndPage() {
                   <Row gutter={5} style={{ marginBottom: 5, borderBottom: '1px solid #f0f0f0' }}>
                     <Col span={10}><Text strong style={{ fontSize: 10 }}>Batch/Serial</Text></Col>
                     <Col span={8}><Text strong style={{ fontSize: 10 }}>Expiry Date</Text></Col>
-                    <Col span={4}><Text strong style={{ fontSize: 10 }}>Count Qty</Text></Col>
+                    <Col span={4}><Text strong style={{ fontSize: 10 }}>Count</Text></Col>
                     <Col span={2}></Col>
                   </Row>
 
