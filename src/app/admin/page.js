@@ -45,7 +45,7 @@ export default function AdminPage() {
       title: "Master Data",
       items: [
         { name: "Product Groups", key: "groups", icon: Folder },
-        { name: "Units", key: "units", icon: Boxes },
+        { name: "Import Stock Data", key: "stock", icon: Boxes },
         { name: "Categories", key: "categories", icon: Layers },
       ],
     },
@@ -92,6 +92,8 @@ export default function AdminPage() {
                       onClick={() => {
                         if (item.key === "WarehouseLayouts") {
                           router.push("/admin/warehouse-layout");
+                        } else if (item.key === "stock") {
+                          router.push("/admin/importStock"); // 👈 ADD THIS
                         } else {
                           setOpenModal(item.key);
                         }
@@ -120,8 +122,6 @@ export default function AdminPage() {
         open={openModal === "racks"}
         onClose={() => setOpenModal(null)}
       />
-
-      
     </div>
   );
 }
