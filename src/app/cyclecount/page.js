@@ -19,6 +19,8 @@ import {
 import { useRouter } from "next/navigation";
 import { supabase } from "../lib/supabase";
 import dayjs from "dayjs";
+import TeamLoginModal from "../components/TeamLoginModal";
+import SupervisorModal from "../components/SupervisorModal";
 
 const { Title, Text } = Typography;
 
@@ -32,9 +34,14 @@ export default function CycleDashboard() {
   const [teamModalVisible, setTeamModalVisible] = useState(false);
   const [teams, setTeams] = useState([]);
   const [selectedCycle, setSelectedCycle] = useState(null);
-  const [passwords, setPasswords] = useState({});
+  // const [passwords, setPasswords] = useState({});
   const [activeIndex, setActiveIndex] = useState(0);
-  const [selectedTeamId, setSelectedTeamId] = useState(null);
+  // const [selectedTeamId, setSelectedTeamId] = useState(null);
+
+  const [teamLoginVisible, setTeamLoginVisible] = useState(false);
+  const [supervisorVisible, setSupervisorVisible] = useState(false);
+  const [selectedTeam, setSelectedTeam] = useState(null);
+  const [loadingLogin, setLoadingLogin] = useState(false);
 
   const fetchCycles = async () => {
     console.log("🚀 Starting to fetch cycles...");
@@ -229,19 +236,41 @@ export default function CycleDashboard() {
   const active = cycles.filter((c) => c.status === "active").length;
   const completed = cycles.filter((c) => c.status === "completed").length;
 
-  const handleTeamLogin = async (team) => {
-    const enteredPassword = passwords[team.id];
+ const handleTeamLogin = async (password) => {
+  setLoadingLogin(true);
 
-    if (!enteredPassword) {
-      return message.error("Enter password");
+  try {
+    if (!selectedTeam) throw new Error("No team selected");
+
+    if (selectedTeam.password !== password) {
+      throw new Error("Wrong password");
     }
 
-    if (enteredPassword !== team.password) {
-      return message.error("Invalid password");
+    const { data: existing } = await supabase
+      .from("counting_sessions")
+      .select("*")
+      .eq("team_id", selectedTeam.id)
+      .is("sessions_stop", null)
+      .maybeSingle();
+
+    if (existing) {
+      setTeamLoginVisible(false);
+      setSupervisorVisible(true);
+      return;
     }
 
+    await createSession(selectedTeam);
+
+  } catch (err) {
+    message.error(err.message);
+  } finally {
+    setLoadingLogin(false);
+  }
+};
+
+  const createSession = async (team) => {
     try {
-      // 🔥 Create session
+      if (!selectedCycle) throw new Error("No cycle selected");
       const { error } = await supabase.from("counting_sessions").insert([
         {
           team_id: team.id,
@@ -253,12 +282,35 @@ export default function CycleDashboard() {
 
       message.success(`Logged in as ${team.team_leader}`);
 
+      setTeamLoginVisible(false);
+      setSupervisorVisible(false);
       setTeamModalVisible(false);
 
-      // ✅ Navigate after login
       router.push(`/cyclecount/${selectedCycle.id}`);
     } catch (err) {
-      message.error("Session already active or error occurred");
+      message.error("Error starting session");
+    }
+  };
+
+  const handleSupervisorAuth = async (password) => {
+    setLoadingLogin(true);
+
+    try {
+      if (password !== "admin123") {
+        throw new Error("Invalid supervisor password");
+      }
+
+      await supabase
+        .from("counting_sessions")
+        .update({ sessions_stop: new Date() })
+        .eq("team_id", selectedTeam.id)
+        .is("sessions_stop", null);
+
+      await createSession(selectedTeam);
+    } catch (err) {
+      message.error(err.message);
+    } finally {
+      setLoadingLogin(false);
     }
   };
 
@@ -266,8 +318,8 @@ export default function CycleDashboard() {
     // 1. Get all teams (✅ include assistants)
     const { data: teams, error: teamError } = await supabase
       .from("teams")
-      .select("id, team_leader, username, password, status, assistants");
-
+      .select("id, team_leader, username, password, status, assistants")
+      .eq("status", "ACTIVE");
     if (teamError) throw teamError;
 
     // 2. Get active sessions for this cycle
@@ -311,7 +363,7 @@ export default function CycleDashboard() {
     });
   };
 
- const cleanCardStyles = `
+  const cleanCardStyles = `
 .deck-wrapper {
   display: flex;
   align-items: center;
@@ -338,6 +390,8 @@ export default function CycleDashboard() {
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s;
+  z-index: 10;
+  position: relative;
 }
 
 .nav-btn:hover {
@@ -506,123 +560,131 @@ export default function CycleDashboard() {
       </Card>
 
       <Modal
-  open={teamModalVisible}
-  onCancel={() => setTeamModalVisible(false)}
-  footer={null}
-  width={600}
-  centered
->
-  {/* HEADER */}
-  <div style={{ marginBottom: 16 }}>
-    <Title level={4} style={{ margin: 0 }}>
-      Select Team
-    </Title>
-    <Text type="secondary">
-      Choose an available team to start counting
-    </Text>
-  </div>
+        open={teamModalVisible}
+        onCancel={() => setTeamModalVisible(false)}
+        footer={null}
+        width={600}
+        centered
+      >
+        {/* HEADER */}
+        <div style={{ marginBottom: 16 }}>
+          <Title level={4} style={{ margin: 0 }}>
+            Select Team
+          </Title>
+          <Text type="secondary">
+            Choose an available team to start counting
+          </Text>
+        </div>
 
-  <div className="deck-wrapper">
-    {/* LEFT */}
-    <button className="nav-btn" onClick={prevCard}>
-      ‹
-    </button>
-
-    {/* CARDS */}
-    <div className="deck">
-      {teams.map((team, index) => {
-        const position =
-          index === activeIndex
-            ? "center"
-            : index === (activeIndex - 1 + teams.length) % teams.length
-            ? "left"
-            : index === (activeIndex + 1) % teams.length
-            ? "right"
-            : "hidden";
-
-        return (
-          <div
-            key={team.id}
-            className={`card ${position} ${
-              team.isActive ? "disabled" : ""
-            } ${selectedTeamId === team.id ? "active" : ""}`}
-            onClick={() => {
-              if (team.isActive) return;
-              setSelectedTeamId(team.id);
-              setActiveIndex(index);
+        <div className="deck-wrapper">
+          {/* LEFT BUTTON */}
+          <button
+            className="nav-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              prevCard();
             }}
+            disabled={teamLoginVisible || supervisorVisible}
           >
-            {/* TOP */}
-            <div className="card-header">
-              <div className="avatar">
-                {team.username?.charAt(0).toUpperCase()}
-              </div>
+            ‹
+          </button>
 
-              <div>
-                <div className="username">{team.username}</div>
-                <div className="leader">
-                  👤 {team.team_leader}
-                </div>
-              </div>
+          {/* 👇 IMPORTANT WRAPPER (prevents overlap issues) */}
+          <div style={{ position: "relative", width: 340, height: 260 }}>
+            <div className="deck">
+              {teams.map((team, index) => {
+                const position =
+                  index === activeIndex
+                    ? "center"
+                    : index === (activeIndex - 1 + teams.length) % teams.length
+                      ? "left"
+                      : index === (activeIndex + 1) % teams.length
+                        ? "right"
+                        : "hidden";
+
+                return (
+                  <div
+                    key={team.id}
+                    className={`card ${position} ${
+                      team.isActive ? "disabled" : ""
+                    } ${selectedTeam?.id === team.id ? "active" : ""}`}
+                    onClick={() => {
+                      // ✅ ONLY allow click on center card
+                      if (
+                        team.isActive ||
+                        teamLoginVisible ||
+                        position !== "center"
+                      )
+                        return;
+
+                      setSelectedTeam(team);
+
+                      setTimeout(() => {
+                        setTeamModalVisible(false);
+                        setTeamLoginVisible(true);
+                      }, 200);
+                    }}
+                  >
+                    {/* TOP */}
+                    <div className="card-header">
+                      <div className="avatar">
+                        {team.username?.charAt(0).toUpperCase()}
+                      </div>
+
+                      <div>
+                        <div className="username">{team.username}</div>
+                        <div className="leader">👤 {team.team_leader}</div>
+                      </div>
+                    </div>
+
+                    {/* ASSISTANTS */}
+                    <div className="assistants">
+                      {team.assistants?.length > 0 ? (
+                        team.assistants.map((a, i) => <Tag key={i}>{a}</Tag>)
+                      ) : (
+                        <Text type="secondary">No assistants</Text>
+                      )}
+                    </div>
+
+                    {/* ACTIVE */}
+                    {team.isActive && (
+                      <Tag color="green" style={{ marginTop: 8 }}>
+                        Active Session
+                      </Tag>
+                    )}
+                  </div>
+                );
+              })}
             </div>
-
-            {/* ASSISTANTS */}
-            <div className="assistants">
-              {team.assistants?.length > 0 ? (
-                team.assistants.map((a, i) => (
-                  <Tag key={i}>{a}</Tag>
-                ))
-              ) : (
-                <Text type="secondary">No assistants</Text>
-              )}
-            </div>
-
-            {/* ACTIVE */}
-            {team.isActive && (
-              <Tag color="green" style={{ marginTop: 8 }}>
-                Active Session
-              </Tag>
-            )}
-
-            {/* LOGIN */}
-            {!team.isActive && selectedTeamId === team.id && (
-              <div className="login-box">
-                <Input.Password
-                  placeholder="Password"
-                  size="small"
-                  onClick={(e) => e.stopPropagation()}
-                  onChange={(e) =>
-                    setPasswords((prev) => ({
-                      ...prev,
-                      [team.id]: e.target.value,
-                    }))
-                  }
-                />
-
-                <Button
-                  type="primary"
-                  size="small"
-                  block
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleTeamLogin(team);
-                  }}
-                >
-                  Start
-                </Button>
-              </div>
-            )}
           </div>
-        );
-      })}
-    </div>
 
-    {/* RIGHT */}
-    <button className="nav-btn" onClick={nextCard}>
-      ›
-    </button>
-  </div>
-</Modal>
+          {/* RIGHT BUTTON */}
+          <button
+            className="nav-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              nextCard();
+            }}
+            disabled={teamLoginVisible || supervisorVisible}
+          >
+            ›
+          </button>
+        </div>
+      </Modal>
+
+      <TeamLoginModal
+        open={teamLoginVisible}
+        team={selectedTeam}
+        onLogin={handleTeamLogin}
+        loading={loadingLogin}
+      />
+
+      <SupervisorModal
+        open={supervisorVisible}
+        onConfirm={handleSupervisorAuth}
+        onCancel={() => setSupervisorVisible(false)}
+        loading={loadingLogin}
+      />
     </div>
   );
 }

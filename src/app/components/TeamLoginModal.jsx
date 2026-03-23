@@ -5,19 +5,18 @@ import { TeamOutlined } from "@ant-design/icons";
 import { useState, useEffect } from "react";
 
 export default function TeamLoginModal({ open, onLogin, loading }) {
-  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
 
-  // Reset fields when modal opens
+  // Reset password when modal opens
   useEffect(() => {
     if (open) {
-      setUsername("");
       setPassword("");
     }
   }, [open]);
 
   const handleSubmit = () => {
-    onLogin(username, password);
+    if (!password) return; // optional safety
+    onLogin(password); // ✅ FIXED (only password)
   };
 
   return (
@@ -37,16 +36,8 @@ export default function TeamLoginModal({ open, onLogin, loading }) {
 
         <h2 style={{ marginBottom: 5 }}>Team Login</h2>
         <p style={{ color: "#888", marginBottom: 20 }}>
-          Please login to continue
+          Enter password to continue
         </p>
-
-        <Input
-          size="large"
-          placeholder="Username"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          style={{ marginBottom: 15 }}
-        />
 
         <Input.Password
           size="large"
@@ -64,7 +55,7 @@ export default function TeamLoginModal({ open, onLogin, loading }) {
           loading={loading}
           onClick={handleSubmit}
         >
-          Login
+          Start
         </Button>
       </Card>
     </Modal>
