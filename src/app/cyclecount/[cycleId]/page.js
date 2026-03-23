@@ -125,11 +125,11 @@ export default function YearEndPage() {
     setSelectedWarehouse(null);
   }, [selectedProduct]);
 
-useEffect(() => {
-  if (isLoggedIn && cycleId) {
-    fetchInventory();
-  }
-}, [isLoggedIn, cycleId]);
+  useEffect(() => {
+    if (isLoggedIn && cycleId) {
+      fetchInventory();
+    }
+  }, [isLoggedIn, cycleId]);
 
   useEffect(() => {
     if (!selectedProduct) return;
@@ -223,7 +223,8 @@ useEffect(() => {
           counted_at,
           item_master (
             id,
-            item_name
+            item_name,
+            sl_no
           )
         `,
           ).eq("cycle_id", Number(cycleId))
@@ -456,7 +457,7 @@ useEffect(() => {
           // Mark as finished if remaining will be 0
           finished:
             Number(b.available_qty) -
-              ((b.allocations?.reduce((s, a) => s + a.qty, 0) || 0) + qty) ===
+            ((b.allocations?.reduce((s, a) => s + a.qty, 0) || 0) + qty) ===
             0,
         };
       }),
@@ -547,6 +548,12 @@ useEffect(() => {
                 scroll={{ y: "60vh" }}
                 style={{ background: "#fff", borderRadius: 8 }}
                 columns={[
+                  {
+                    title: "SL",
+                    dataIndex: "sl_no",
+                    width: 60,
+                    render: (val) => <Text style={{ fontSize: 12 }}>{val}</Text>,
+                  },
                   {
                     title: "Item",
                     dataIndex: "item_name",
@@ -802,15 +809,17 @@ useEffect(() => {
                   </Card>
                   <div className="no-print" style={{ marginTop: 15 }}>
                     <Button
-  type="primary"
-  block
-  size="large"
-  style={{
-    height: 48,
-    borderRadius: 10,
-    fontWeight: 600,
-  }}
->
+                      type="primary"
+                      block
+                      onClick={handleSubmit}
+                      loading={loading}
+                      size="large"
+                      style={{
+                        height: 48,
+                        borderRadius: 10,
+                        fontWeight: 600,
+                      }}
+                    >
                       CONFIRM & SUBMIT
                     </Button>
                   </div>
@@ -910,7 +919,7 @@ useEffect(() => {
                                         : "pointer",
                                       border:
                                         selectedBatch?.batch_no ===
-                                        batch.batch_no
+                                          batch.batch_no
                                           ? "2px solid #1677ff"
                                           : "1px solid #e5e7eb",
                                     }}
@@ -1044,17 +1053,17 @@ useEffect(() => {
                                     getRemainingQty(
                                       selectedBatch?.batch_no,
                                     ) && (
-                                    <div
-                                      style={{
-                                        color: "#ff4d4f",
-                                        fontSize: "11px",
-                                        marginTop: "4px",
-                                      }}
-                                    >
-                                      Max:{" "}
-                                      {getRemainingQty(selectedBatch?.batch_no)}
-                                    </div>
-                                  )}
+                                      <div
+                                        style={{
+                                          color: "#ff4d4f",
+                                          fontSize: "11px",
+                                          marginTop: "4px",
+                                        }}
+                                      >
+                                        Max:{" "}
+                                        {getRemainingQty(selectedBatch?.batch_no)}
+                                      </div>
+                                    )}
                                 </Col>
 
                                 <Col span={3}>
@@ -1065,7 +1074,7 @@ useEffect(() => {
                                     disabled={
                                       !allocationForm.qty ||
                                       allocationForm.qty >
-                                        getRemainingQty(selectedBatch?.batch_no)
+                                      getRemainingQty(selectedBatch?.batch_no)
                                     }
                                   ></Button>
                                 </Col>

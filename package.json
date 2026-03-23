@@ -8,9 +8,10 @@
     "start": "next start"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.97.0",
+    "@supabase/supabase-js": "^2.98.0",
     "antd": "^6.3.0",
     "axios": "^1.13.6",
+    "dotenv": "^17.3.1",
     "internmap": "^2.0.3",
     "jspdf": "^4.2.0",
     "jspdf-autotable": "^5.0.7",
