@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "../../lib/supabase";
+import { useParams } from "next/navigation";
 import {
   Card,
   Row,
@@ -18,7 +19,6 @@ import {
   Button,
   AutoComplete,
   Select,
-  Popconfirm,
   Badge,
 } from "antd";
 import {
@@ -32,7 +32,10 @@ import {
 import dayjs from "dayjs";
 
 const { Text, Title } = Typography;
-const { TabPane } = Tabs;
+// const { TabPane } = Tabs;
+
+
+
 
 const thermalStyles = `
 @media print {
@@ -77,6 +80,10 @@ const thermalStyles = `
 `;
 
 export default function YearEndPage() {
+  const params = useParams();
+  const cycleId = params?.cycleId;
+
+
   const [mounted, setMounted] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [team, setTeam] = useState(null);
@@ -91,6 +98,10 @@ export default function YearEndPage() {
   const [allocationTab, setAllocationTab] = useState("pending");
   const [selectedBatch, setSelectedBatch] = useState(null);
   const [allocations, setAllocations] = useState([]);
+  const [searchText, setSearchText] = useState("");
+
+
+
 
   const [allocationForm, setAllocationForm] = useState({
     rack: null,
@@ -106,7 +117,7 @@ export default function YearEndPage() {
     setMounted(true);
     if (window.location.hostname === "localhost") {
       setIsLoggedIn(true);
-      setTeam({ id: 0, team_leader: "Developer Mode" });
+      setTeam({ id: 0, team_leader: "Developers Mode" });
     }
   }, []);
 
@@ -114,9 +125,11 @@ export default function YearEndPage() {
     setSelectedWarehouse(null);
   }, [selectedProduct]);
 
-  useEffect(() => {
-    if (isLoggedIn) fetchInventory();
-  }, [isLoggedIn]);
+useEffect(() => {
+  if (isLoggedIn && cycleId) {
+    fetchInventory();
+  }
+}, [isLoggedIn, cycleId]);
 
   useEffect(() => {
     if (!selectedProduct) return;
@@ -185,165 +198,153 @@ export default function YearEndPage() {
     return { history, pending, total: history + pending };
   }, [selectedProduct, countingUnits]);
 
-const fetchInventory = async () => {
-  setLoading(true);
-  try {
-    const { data, error } = await supabase
-      .from("cycle_items")
-      .select(`
-        id,
-        cycle_id,
-        item_id,
-        status,
-        sys_batch_no,
-        sys_expiry_date,
-        count_batch_no,
-        count_expiry_date,
-        count_quantity,
-        counted_at,
-        item_master (
+  const fetchInventory = async () => {
+    setLoading(true);
+
+    try {
+      let allData = [];
+      let from = 0;
+      const limit = 1000;
+
+      while (true) {
+        const { data, error } = await supabase
+          .from("cycle_items")
+          .select(
+            `
           id,
-          item_name
-        )
-      `);
+          cycle_id,
+          item_id,
+          status,
+          sys_batch_no,
+          sys_expiry_date,
+          count_batch_no,
+          count_expiry_date,
+          count_quantity,
+          counted_at,
+          item_master (
+            id,
+            item_name
+          )
+        `,
+          ).eq("cycle_id", Number(cycleId))
+          .range(from, from + limit - 1);
 
-    if (error) throw error;
+        if (error) throw error;
 
-    const grouped = data.reduce((acc, curr) => {
-      const itemId = curr.item_id;
+        allData = [...allData, ...data];
 
-      if (!acc[itemId])
-        acc[itemId] = {
-          ...curr.item_master,
-          cycle_id: curr.cycle_id,
-          status: curr.status,
-          systemUnits: [],
-        };
+        // ✅ stop when last page reached
+        if (data.length < limit) break;
 
-      acc[itemId].systemUnits.push(curr);
+        from += limit;
+      }
 
-      if (curr.status === "pending") acc[itemId].status = "pending";
+      console.log("✅ Total fetched rows:", allData.length);
 
-      return acc;
-    }, {});
+      // ✅ GROUPING LOGIC (same as your existing)
+      const grouped = allData.reduce((acc, curr) => {
+        const itemId = curr.item_id;
 
-    const finalData = Object.values(grouped);
+        if (!acc[itemId]) {
+          acc[itemId] = {
+            ...curr.item_master,
+            cycle_id: curr.cycle_id,
+            status: curr.status,
+            systemUnits: [],
+          };
+        }
 
-    setProducts(finalData);
+        acc[itemId].systemUnits.push(curr);
 
-    return finalData; // ✅ THIS IS KEY
-  } catch (err) {
-    message.error("Database Error");
-    return [];
-  } finally {
-    setLoading(false);
-  }
-};
+        if (curr.status === "pending") {
+          acc[itemId].status = "pending";
+        }
+
+        return acc;
+      }, {});
+
+      const finalData = Object.values(grouped);
+
+      console.log("✅ Unique items:", finalData.length);
+
+      setProducts(finalData);
+
+      return finalData; // important for reselect after submit
+    } catch (err) {
+      console.error(err);
+      message.error("Database Error");
+      return [];
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const updateField = (id, f, v) =>
     setCountingUnits((prev) =>
       prev.map((u) => (u.tempId === id ? { ...u, [f]: v } : u)),
     );
 
-  // const handleSubmit = async () => {
-  //   setLoading(true);
-  //   try {
-  //     const activeUnits = countingUnits.filter((u) => u.quantity !== null);
-  //     for (const unit of activeUnits) {
-  //       const payload = {
-  //         count_quantity: unit.quantity,
-  //         count_batch_no: unit.batch_no || null,
-  //         count_expiry_date: unit.expiry_date
-  //           ? dayjs(unit.expiry_date).format("YYYY-MM-DD")
-  //           : null,
-  //         status: "submitted",
-  //         counted_at: new Date(),
-  //       };
-  //       if (unit.isSystem)
-  //         await supabase.from("cycle_items").update(payload).eq("id", unit.id);
-  //       else
-  //         await supabase.from("cycle_items").insert([
-  //           {
-  //             ...payload,
-  //             cycle_id: selectedProduct.cycle_id,
-  //             item_id: selectedProduct.id,
-  //           },
-  //         ]);
-  //     }
-  //     message.success("Logs Saved");
-  //      // ✅ Store current selected ID
-  //   const selectedId = selectedProduct.id;
-  //     fetchInventory();
-  //     // setSelectedProduct(null);
-
-  //      // ✅ Re-select the same product from new data
-  //   setSelectedProduct((prev) => {
-  //     const updated = products.find((p) => p.id === selectedId);
-  //     return updated || null;
-  //   });
-  //   } catch (e) {
-  //     message.error("Error Saving");
-  //   } finally {
-  //     setLoading(false);
-  //   }
-  // };
-
   // Restore Tabs logic
- 
- 
- const handleSubmit = async () => {
-  setLoading(true);
 
-  try {
-    const activeUnits = countingUnits.filter((u) => u.quantity !== null);
+  const handleSubmit = async () => {
+    setLoading(true);
 
-    for (const unit of activeUnits) {
-      const payload = {
-        count_quantity: unit.quantity,
-        count_batch_no: unit.batch_no || null,
-        count_expiry_date: unit.expiry_date
-          ? dayjs(unit.expiry_date).format("YYYY-MM-DD")
-          : null,
-        status: "submitted",
-        counted_at: new Date(),
-      };
+    try {
+      const activeUnits = countingUnits.filter((u) => u.quantity !== null);
 
-      if (unit.isSystem)
-        await supabase.from("cycle_items").update(payload).eq("id", unit.id);
-      else
-        await supabase.from("cycle_items").insert([
-          {
-            ...payload,
-            cycle_id: selectedProduct.cycle_id,
-            item_id: selectedProduct.id,
-          },
-        ]);
+      for (const unit of activeUnits) {
+        const payload = {
+          count_quantity: unit.quantity,
+          count_batch_no: unit.batch_no || null,
+          count_expiry_date: unit.expiry_date
+            ? dayjs(unit.expiry_date).format("YYYY-MM-DD")
+            : null,
+          status: "submitted",
+          counted_at: new Date(),
+        };
+
+        if (unit.isSystem)
+          await supabase.from("cycle_items").update(payload).eq("id", unit.id);
+        else
+          await supabase.from("cycle_items").insert([
+            {
+              ...payload,
+              cycle_id: selectedProduct.cycle_id,
+              item_id: selectedProduct.id,
+            },
+          ]);
+      }
+
+      message.success("Logs Saved");
+
+      const selectedId = selectedProduct.id;
+
+      // ✅ WAIT for fresh data
+      const updatedProducts = await fetchInventory();
+
+      // ✅ Use fresh data (not old state)
+      const updated = updatedProducts.find((p) => p.id === selectedId);
+
+      setSelectedProduct(updated || null);
+    } catch (e) {
+      message.error("Error Saving");
+    } finally {
+      setLoading(false);
     }
+  };
 
-    message.success("Logs Saved");
-
-    const selectedId = selectedProduct.id;
-
-    // ✅ WAIT for fresh data
-    const updatedProducts = await fetchInventory();
-
-    // ✅ Use fresh data (not old state)
-    const updated = updatedProducts.find((p) => p.id === selectedId);
-
-    setSelectedProduct(updated || null);
-
-  } catch (e) {
-    message.error("Error Saving");
-  } finally {
-    setLoading(false);
-  }
-};
- 
- 
   const filteredItems = useMemo(() => {
-    if (activeTab === "all") return products;
-    return products.filter((p) => p.status === activeTab);
-  }, [products, activeTab]);
+    let data =
+      activeTab === "all"
+        ? products
+        : products.filter((p) => p.status === activeTab);
+
+    if (!searchText) return data;
+
+    return data.filter((p) =>
+      p.item_name?.toLowerCase().includes(searchText.toLowerCase()),
+    );
+  }, [products, activeTab, searchText]);
 
   const getOptions = (field, val, currentId) => {
     const uniqueVals = new Map();
@@ -483,21 +484,45 @@ const fetchInventory = async () => {
 
   const qtyError = allocationForm.qty && allocationForm.qty > remaining;
 
+  const modernStyles = `
+.modern-row:hover {
+  background: #f0f5ff !important;
+  cursor: pointer;
+}
+
+.selected-row {
+  background: #e6f4ff !important;
+}
+`;
+
   return (
-    <div style={{ padding: 20, background: "#fff", minHeight: "100vh" }}>
+    <div
+      style={{
+        padding: 16,
+        background: "#f5f7fa",
+        minHeight: "100vh",
+      }}
+    >
       <style>{thermalStyles}</style>
+      <style>{modernStyles}</style>
       {isLoggedIn && (
         <Card
-          variant="none"
-          title={
-            <Text strong className="no-print">
-              TL: {team?.team_leader}
-            </Text>
-          }
-          style={{ border: "1px solid #d9d9d9" }}
+          variant={false}
+          style={{
+            borderRadius: 12,
+            boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+          }}
         >
           <Row gutter={24}>
             <Col span={8} className="no-print">
+              <Input
+                placeholder="Search item..."
+                allowClear
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                style={{ marginBottom: 10 }}
+              />
+
               {/* RESTORED TABS */}
               <Tabs
                 activeKey={activeTab}
@@ -513,12 +538,28 @@ const fetchInventory = async () => {
               />
               <Table
                 dataSource={filteredItems}
-                columns={[{ title: "Item Name", dataIndex: "item_name" }]}
+                // columns={[{ title: "Item Name", dataIndex: "item_name" }]}
                 rowKey="id"
+                rowClassName={() => "modern-row"}
                 onRow={(r) => ({ onClick: () => setSelectedProduct(r) })}
                 pagination={false}
                 size="small"
                 scroll={{ y: "60vh" }}
+                style={{ background: "#fff", borderRadius: 8 }}
+                columns={[
+                  {
+                    title: "Item",
+                    dataIndex: "item_name",
+                    render: (text, record) => (
+                      <div>
+                        <div style={{ fontWeight: 500 }}>{text}</div>
+                        <div style={{ fontSize: 11, color: "#888" }}>
+                          {record.systemUnits.length} records
+                        </div>
+                      </div>
+                    ),
+                  },
+                ]}
               />
             </Col>
 
@@ -533,9 +574,15 @@ const fetchInventory = async () => {
                       marginBottom: 16,
                     }}
                   >
-                    <Title level={4} style={{ margin: 0 }}>
-                      {selectedProduct.item_name}
-                    </Title>
+                    <div style={{ marginBottom: 10 }}>
+                      <Title level={5} style={{ margin: 0 }}>
+                        {selectedProduct.item_name}
+                      </Title>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        Cycle ID: {selectedProduct.cycle_id}
+                      </Text>
+                    </div>
+
                     <div className="no-print">
                       <Button
                         icon={<PrinterOutlined />}
@@ -567,7 +614,7 @@ const fetchInventory = async () => {
                     gutter={8}
                     style={{
                       marginBottom: 8,
-                      borderBottom: "2px solid #000",
+                      borderBottom: "1px solid #f0f0f0",
                       paddingBottom: 4,
                       textAlign: "center",
                     }}
@@ -724,69 +771,46 @@ const fetchInventory = async () => {
                     </Row>
                   ))}
 
-                  <div style={{ marginTop: 20, padding: "12px" }}>
-                    <Row gutter={16} align="middle">
-                      <Col
-                        span={7}
-                        style={{
-                          borderRight: "1px solid #d9d9d9",
-                          textAlign: "center",
-                        }}
-                      >
-                        <Text
-                          type="secondary"
-                          style={{ fontSize: 10, display: "block" }}
+                  <Card
+                    size="small"
+                    style={{
+                      marginTop: 20,
+                      borderRadius: 10,
+                      background: "#fafafa",
+                    }}
+                  >
+                    <Row gutter={16}>
+                      {[
+                        { label: "History", value: totals.history },
+                        { label: "New", value: totals.pending },
+                        { label: "Total", value: totals.total },
+                      ].map((item) => (
+                        <Col
+                          span={8}
+                          key={item.label}
+                          style={{ textAlign: "center" }}
                         >
-                          HISTORY
-                        </Text>
-                        <Text strong style={{ fontSize: 16 }}>
-                          {totals.history}
-                        </Text>
-                      </Col>
-                      <Col
-                        span={7}
-                        style={{
-                          borderRight: "1px solid #d9d9d9",
-                          paddingLeft: 20,
-                          textAlign: "center",
-                        }}
-                      >
-                        <Text
-                          type="secondary"
-                          style={{ fontSize: 10, display: "block" }}
-                        >
-                          NEW
-                        </Text>
-                        <Text strong style={{ fontSize: 16 }}>
-                          {totals.pending}
-                        </Text>
-                      </Col>
-                      <Col
-                        span={7}
-                        style={{ paddingLeft: 20, textAlign: "center" }}
-                      >
-                        <Text
-                          type="secondary"
-                          style={{ fontSize: 10, display: "block" }}
-                        >
-                          TOTAL
-                        </Text>
-                        <Text strong style={{ fontSize: 16, lineHeight: 1 }}>
-                          {totals.total}
-                        </Text>
-                      </Col>
+                          <Text type="secondary" style={{ fontSize: 11 }}>
+                            {item.label.toUpperCase()}
+                          </Text>
+                          <div style={{ fontSize: 20, fontWeight: 600 }}>
+                            {item.value}
+                          </div>
+                        </Col>
+                      ))}
                     </Row>
-                  </div>
+                  </Card>
                   <div className="no-print" style={{ marginTop: 15 }}>
                     <Button
-                      type="primary"
-                      block
-                      size="large"
-                      icon={<SaveOutlined />}
-                      onClick={handleSubmit}
-                      loading={loading}
-                      style={{ height: 45, fontWeight: "bold" }}
-                    >
+  type="primary"
+  block
+  size="large"
+  style={{
+    height: 48,
+    borderRadius: 10,
+    fontWeight: 600,
+  }}
+>
                       CONFIRM & SUBMIT
                     </Button>
                   </div>

@@ -19,6 +19,7 @@ import { useRouter } from "next/navigation";
 
 import WarehouseModal from "./components/WarehouseModal";
 import RackModal from "./components/RackModal";
+import TeamModal from "./components/TeamModal";
 
 export default function AdminPage() {
   const [openModal, setOpenModal] = useState(null);
@@ -27,32 +28,34 @@ export default function AdminPage() {
     {
       title: "System Configuration",
       items: [
-        { name: "Warehouses", key: "warehouse", icon: Warehouse },
-        { name: "Racks", key: "racks", icon: Layers },
-        { name: "WarehouseLayouts", key: "WarehouseLayouts", icon: Warehouse },
+        { name: "Warehouses", key: "warehouse", icon: Warehouse, modal: "warehouse"  },
+        { name: "Racks", key: "racks", icon: Layers, modal: "racks"  },
+        { name: "WarehouseLayouts", key: "WarehouseLayouts", icon: Warehouse,route: "/admin/warehouse-layout" },
       ],
     },
     {
       title: "Inventory Controls",
       items: [
-        { name: "Initiate Cycle Count", key: "cycle", icon: RefreshCw },
+        { name: "Cycle Count Dashboard", key: "cycle", icon: RefreshCw,route: "/cyclecount" },
         { name: "ABC Classification", key: "abc", icon: Boxes },
         { name: "Controlled Count", key: "controlled", icon: Layers },
-        { name: "Year End Count", key: "yearend", icon: Database },
+        { name: "Year End Count", key: "yearend", icon: Database,route: "/admin/yearEndCountInitiate" },
+        { name: "Create Counting Team", key: "counting-team", icon: Users,modal: "counting-team" },
+
       ],
     },
     {
       title: "Master Data",
       items: [
         { name: "Product Groups", key: "groups", icon: Folder },
-        { name: "Import Stock Data", key: "stock", icon: Boxes },
+        { name: "Import Stock Data", key: "stock", icon: Boxes,route: "/admin/importStock" },
         { name: "Categories", key: "categories", icon: Layers },
       ],
     },
     {
       title: "User & Security",
       items: [
-        { name: "Users", key: "users", icon: Users },
+        { name: "Users", key: "users", icon: Users,route: "/admin/users" },
         { name: "Roles & Permissions", key: "roles", icon: Shield },
       ],
     },
@@ -90,12 +93,12 @@ export default function AdminPage() {
                     <div
                       key={item.key}
                       onClick={() => {
-                        if (item.key === "WarehouseLayouts") {
-                          router.push("/admin/warehouse-layout");
-                        } else if (item.key === "stock") {
-                          router.push("/admin/importStock"); // 👈 ADD THIS
+                        if (item.route) {
+                          router.push(item.route);
+                        } else if (item.modal) {
+                          setOpenModal(item.modal);
                         } else {
-                          setOpenModal(item.key);
+                          router.push(`/admin/under-construction?feature=${item.name}`); // 👈 fallback
                         }
                       }}
                       className="flex items-center gap-3 p-4 border rounded-lg hover:border-blue-500 hover:bg-blue-50 cursor-pointer transition"
@@ -120,6 +123,11 @@ export default function AdminPage() {
 
       <RackModal
         open={openModal === "racks"}
+        onClose={() => setOpenModal(null)}
+      />
+
+      <TeamModal
+      open={openModal === "counting-team"}
         onClose={() => setOpenModal(null)}
       />
     </div>
