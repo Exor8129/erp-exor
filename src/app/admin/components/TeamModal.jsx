@@ -171,7 +171,7 @@ export default function TeamModal({ open, onClose }) {
       onCancel={onClose}
       onOk={handleSave}
       confirmLoading={loading}
-      destroyOnClose
+      destroyOnHidden
     >
       {/* 🔘 Mode Toggle */}
       <Segmented

@@ -1,13 +1,18 @@
 "use client";
 
-import { Modal, Input, Button, Card, Avatar } from "antd";
+import { Modal, Input, Button, Card, Avatar, Tag } from "antd";
 import { TeamOutlined } from "@ant-design/icons";
 import { useState, useEffect } from "react";
 
-export default function TeamLoginModal({ open, onLogin, loading }) {
+export default function TeamLoginModal({
+  open,
+  onLogin,
+  onClose, // ✅ NEW
+  loading,
+  teamName, // ✅ NEW
+}) {
   const [password, setPassword] = useState("");
 
-  // Reset password when modal opens
   useEffect(() => {
     if (open) {
       setPassword("");
@@ -15,15 +20,16 @@ export default function TeamLoginModal({ open, onLogin, loading }) {
   }, [open]);
 
   const handleSubmit = () => {
-    if (!password) return; // optional safety
-    onLogin(password); // ✅ FIXED (only password)
+    if (!password) return;
+    onLogin(password);
   };
 
   return (
     <Modal
       open={open}
+      onCancel={onClose} // ✅ close handler
       footer={null}
-      closable={false}
+      closable={true} // ✅ show X button
       centered
       width={400}
     >
@@ -35,6 +41,14 @@ export default function TeamLoginModal({ open, onLogin, loading }) {
         />
 
         <h2 style={{ marginBottom: 5 }}>Team Login</h2>
+
+        {/* ✅ TEAM NAME DISPLAY */}
+        {teamName && (
+          <Tag color="blue" style={{ marginBottom: 10 }}>
+            {teamName}
+          </Tag>
+        )}
+
         <p style={{ color: "#888", marginBottom: 20 }}>
           Enter password to continue
         </p>

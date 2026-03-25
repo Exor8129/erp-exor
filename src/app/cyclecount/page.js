@@ -198,6 +198,7 @@ export default function CycleDashboard() {
             fontWeight: 700,
             fontSize: 16,
             boxShadow: "0 2px 6px rgba(22,119,255,0.3)",
+            
           }}
         >
           {id}
@@ -236,37 +237,36 @@ export default function CycleDashboard() {
   const active = cycles.filter((c) => c.status === "active").length;
   const completed = cycles.filter((c) => c.status === "completed").length;
 
- const handleTeamLogin = async (password) => {
-  setLoadingLogin(true);
+  const handleTeamLogin = async (password) => {
+    setLoadingLogin(true);
 
-  try {
-    if (!selectedTeam) throw new Error("No team selected");
+    try {
+      if (!selectedTeam) throw new Error("No team selected");
 
-    if (selectedTeam.password !== password) {
-      throw new Error("Wrong password");
+      if (selectedTeam.password !== password) {
+        throw new Error("Wrong password");
+      }
+
+      const { data: existing } = await supabase
+        .from("counting_sessions")
+        .select("*")
+        .eq("team_id", selectedTeam.id)
+        .is("sessions_stop", null)
+        .maybeSingle();
+
+      if (existing) {
+        setTeamLoginVisible(false);
+        setSupervisorVisible(true);
+        return;
+      }
+
+      await createSession(selectedTeam);
+    } catch (err) {
+      message.error(err.message);
+    } finally {
+      setLoadingLogin(false);
     }
-
-    const { data: existing } = await supabase
-      .from("counting_sessions")
-      .select("*")
-      .eq("team_id", selectedTeam.id)
-      .is("sessions_stop", null)
-      .maybeSingle();
-
-    if (existing) {
-      setTeamLoginVisible(false);
-      setSupervisorVisible(true);
-      return;
-    }
-
-    await createSession(selectedTeam);
-
-  } catch (err) {
-    message.error(err.message);
-  } finally {
-    setLoadingLogin(false);
-  }
-};
+  };
 
   const createSession = async (team) => {
     try {
@@ -292,27 +292,44 @@ export default function CycleDashboard() {
     }
   };
 
-  const handleSupervisorAuth = async (password) => {
-    setLoadingLogin(true);
+ const handleSupervisorAuth = async (password) => {
+  setLoadingLogin(true);
 
-    try {
-      if (password !== "admin123") {
-        throw new Error("Invalid supervisor password");
-      }
-
-      await supabase
-        .from("counting_sessions")
-        .update({ sessions_stop: new Date() })
-        .eq("team_id", selectedTeam.id)
-        .is("sessions_stop", null);
-
-      await createSession(selectedTeam);
-    } catch (err) {
-      message.error(err.message);
-    } finally {
-      setLoadingLogin(false);
+  try {
+    if (!password) {
+      throw new Error("Enter supervisor password");
     }
-  };
+
+    // 🔥 Validate supervisor
+    const { data: supervisor, error } = await supabase
+      .from("users")
+      .select("*")
+      .eq("role", "supervisor")
+      .eq("password", password)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    if (!supervisor) {
+      throw new Error("Invalid password"); // 👈 THIS triggers toast
+    }
+
+    // 🔥 Close existing session
+    await supabase
+      .from("counting_sessions")
+      .update({ sessions_stop: new Date() })
+      .eq("team_id", selectedTeam.id)
+      .is("sessions_stop", null);
+
+    // 🔥 Create new session
+    await createSession(selectedTeam);
+
+  } catch (err) {
+    message.error(err.message || "Something went wrong");
+  } finally {
+    setLoadingLogin(false);
+  }
+};
 
   const fetchTeamsWithStatus = async (cycleId) => {
     // 1. Get all teams (✅ include assistants)
@@ -378,6 +395,7 @@ export default function CycleDashboard() {
   display: flex;
   align-items: center;
   justify-content: center;
+  z-index: 1;
 }
 
 /* NAV */
@@ -412,27 +430,33 @@ export default function CycleDashboard() {
   border: 1px solid #f0f0f0;
   display: flex;
   flex-direction: column;
+  will-change: transform;
+  backface-visibility: hidden;
 }
 
 /* POSITIONS */
 .card.center {
+  box-shadow: 0 12px 32px rgba(22,119,255,0.25);
   transform: translateX(0) scale(1.05);
-  z-index: 3;
+  z-index: 10;
 }
 
 .card.left {
   transform: translateX(-140px) scale(0.9);
   opacity: 0.5;
+   z-index: 5;
 }
 
 .card.right {
   transform: translateX(140px) scale(0.9);
   opacity: 0.5;
+   z-index: 5;
 }
 
 .card.hidden {
   opacity: 0;
   pointer-events: none;
+   z-index: 0;
 }
 
 /* ACTIVE */
@@ -488,10 +512,16 @@ export default function CycleDashboard() {
   gap: 6px;
 }
 
+.card.center.disabled{
+  opacity: 1;
+  border: 1px solid orange;
+  box-shadow: 0 12px 32px rgba(255,165,0,0.3);
+  background: #fff7e6;}
+
 /* DISABLED */
 .card.disabled {
   opacity: 0.4;
-  cursor: not-allowed;
+  cursor: pointer;
 }
 `;
 
@@ -609,19 +639,19 @@ export default function CycleDashboard() {
                       team.isActive ? "disabled" : ""
                     } ${selectedTeam?.id === team.id ? "active" : ""}`}
                     onClick={() => {
-                      // ✅ ONLY allow click on center card
-                      if (
-                        team.isActive ||
-                        teamLoginVisible ||
-                        position !== "center"
-                      )
-                        return;
+                      if (teamLoginVisible || position !== "center") return;
 
                       setSelectedTeam(team);
 
                       setTimeout(() => {
-                        setTeamModalVisible(false);
-                        setTeamLoginVisible(true);
+                        if (team.isActive) {
+                          // ✅ keep team modal open
+                          setSupervisorVisible(true);
+                        } else {
+                          // ✅ close team modal only for login
+                          setTeamModalVisible(false);
+                          setTeamLoginVisible(true);
+                        }
                       }, 200);
                     }}
                   >
@@ -648,8 +678,8 @@ export default function CycleDashboard() {
 
                     {/* ACTIVE */}
                     {team.isActive && (
-                      <Tag color="green" style={{ marginTop: 8 }}>
-                        Active Session
+                      <Tag color="orange" style={{ marginTop: 8 }}>
+                        Resume / Force Login
                       </Tag>
                     )}
                   </div>
@@ -674,13 +704,15 @@ export default function CycleDashboard() {
 
       <TeamLoginModal
         open={teamLoginVisible}
-        team={selectedTeam}
+        teamName={selectedTeam?.username} // ✅ FIXED
         onLogin={handleTeamLogin}
+        onClose={() => setTeamLoginVisible(false)} // ✅ REQUIRED for close
         loading={loadingLogin}
       />
 
       <SupervisorModal
         open={supervisorVisible}
+        team={selectedTeam}
         onConfirm={handleSupervisorAuth}
         onCancel={() => setSupervisorVisible(false)}
         loading={loadingLogin}
