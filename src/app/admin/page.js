@@ -41,6 +41,7 @@ export default function AdminPage() {
         { name: "Controlled Count", key: "controlled", icon: Layers },
         { name: "Year End Count", key: "yearend", icon: Database,route: "/admin/yearEndCountInitiate" },
         { name: "Create Counting Team", key: "counting-team", icon: Users,modal: "counting-team" },
+        { name: "Verification", key: "verification", icon: Shield,modal: "verification",route: "/admin/verification" },
 
       ],
     },
