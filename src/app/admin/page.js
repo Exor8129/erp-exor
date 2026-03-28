@@ -14,6 +14,8 @@ import {
   Settings,
   Upload,
   Folder,
+  Drill,
+  Printer,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -74,6 +76,14 @@ export default function AdminPage() {
         { name: "Backup Database", key: "backup", icon: Database },
         { name: "Restore Backup", key: "restore", icon: Upload },
         { name: "App Settings", key: "settings", icon: Settings },
+      ],
+    },
+    {
+      title: "Future Features",
+      items: [
+        { name: "Complaints", key: "complaints", icon: Drill,route: "/admin/complaints" },
+        { name: "Print Count Sheets", key: "print-count-sheets", icon: Printer,route: "/admin/printcountpage/26" },
+        
       ],
     },
   ];

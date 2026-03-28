@@ -159,6 +159,19 @@ export default function ImportPage() {
     );
   };
 
+  const parseRate = (value) => {
+  if (!value) return 0;
+
+  return (
+    Number(
+      String(value)
+        .replace(/,/g, "")
+        .replace(/\/.*$/, "") // remove /nos
+        .trim()
+    ) || 0
+  );
+};
+
   const parseQuantity = (value) => {
     if (!value) return 0;
 
@@ -192,6 +205,7 @@ export default function ImportPage() {
           : null,
         quantity: parseQuantity(row["Stock"]),
         mrp: parseMRP(row["MRP"]),
+        purchase_rate: parseRate(row["Purchase Rate"]),
         status: "available",
       });
     });
@@ -238,6 +252,7 @@ export default function ImportPage() {
     { title: "Expiry", dataIndex: "expiry_date" },
     { title: "Qty", dataIndex: "quantity" },
     { title: "MRP", dataIndex: "mrp" },
+    { title: "Purchase Rate", dataIndex: "purchase_rate" },
   ];
 
   const handlePushStock = async () => {
