@@ -42,6 +42,8 @@ export default function CycleDashboard() {
   const [supervisorVisible, setSupervisorVisible] = useState(false);
   const [selectedTeam, setSelectedTeam] = useState(null);
   const [loadingLogin, setLoadingLogin] = useState(false);
+  
+  
 
   const fetchCycles = async () => {
     console.log("🚀 Starting to fetch cycles...");
@@ -198,7 +200,7 @@ export default function CycleDashboard() {
             fontWeight: 700,
             fontSize: 16,
             boxShadow: "0 2px 6px rgba(22,119,255,0.3)",
-            
+
           }}
         >
           {id}
@@ -286,50 +288,50 @@ export default function CycleDashboard() {
       setSupervisorVisible(false);
       setTeamModalVisible(false);
 
-      router.push(`/cyclecount/${selectedCycle.id}`);
+      router.push(`/cyclecount/${selectedCycle.id}?teamId=${team.id}`);
     } catch (err) {
       message.error("Error starting session");
     }
   };
 
- const handleSupervisorAuth = async (password) => {
-  setLoadingLogin(true);
+  const handleSupervisorAuth = async (password) => {
+    setLoadingLogin(true);
 
-  try {
-    if (!password) {
-      throw new Error("Enter supervisor password");
+    try {
+      if (!password) {
+        throw new Error("Enter supervisor password");
+      }
+
+      // 🔥 Validate supervisor
+      const { data: supervisor, error } = await supabase
+        .from("users")
+        .select("*")
+        .eq("role", "supervisor")
+        .eq("password", password)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (!supervisor) {
+        throw new Error("Invalid password"); // 👈 THIS triggers toast
+      }
+
+      // 🔥 Close existing session
+      await supabase
+        .from("counting_sessions")
+        .update({ sessions_stop: new Date() })
+        .eq("team_id", selectedTeam.id)
+        .is("sessions_stop", null);
+
+      // 🔥 Create new session
+      await createSession(selectedTeam);
+
+    } catch (err) {
+      message.error(err.message || "Something went wrong");
+    } finally {
+      setLoadingLogin(false);
     }
-
-    // 🔥 Validate supervisor
-    const { data: supervisor, error } = await supabase
-      .from("users")
-      .select("*")
-      .eq("role", "supervisor")
-      .eq("password", password)
-      .maybeSingle();
-
-    if (error) throw error;
-
-    if (!supervisor) {
-      throw new Error("Invalid password"); // 👈 THIS triggers toast
-    }
-
-    // 🔥 Close existing session
-    await supabase
-      .from("counting_sessions")
-      .update({ sessions_stop: new Date() })
-      .eq("team_id", selectedTeam.id)
-      .is("sessions_stop", null);
-
-    // 🔥 Create new session
-    await createSession(selectedTeam);
-
-  } catch (err) {
-    message.error(err.message || "Something went wrong");
-  } finally {
-    setLoadingLogin(false);
-  }
-};
+  };
 
   const fetchTeamsWithStatus = async (cycleId) => {
     // 1. Get all teams (✅ include assistants)
@@ -635,9 +637,8 @@ export default function CycleDashboard() {
                 return (
                   <div
                     key={team.id}
-                    className={`card ${position} ${
-                      team.isActive ? "disabled" : ""
-                    } ${selectedTeam?.id === team.id ? "active" : ""}`}
+                    className={`card ${position} ${team.isActive ? "disabled" : ""
+                      } ${selectedTeam?.id === team.id ? "active" : ""}`}
                     onClick={() => {
                       if (teamLoginVisible || position !== "center") return;
 
