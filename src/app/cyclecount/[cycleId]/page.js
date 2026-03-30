@@ -1,3 +1,6 @@
+
+
+
 // "use client";
 
 // import { useState, useEffect, useMemo } from "react";
@@ -30,6 +33,7 @@
 //   CheckOutlined,
 // } from "@ant-design/icons";
 // import dayjs from "dayjs";
+// import { useSearchParams } from "next/navigation";
 
 // const { Text, Title } = Typography;
 // // const { TabPane } = Tabs;
@@ -82,12 +86,15 @@
 // export default function YearEndPage() {
 //   const params = useParams();
 //   const cycleId = params?.cycleId;
+//   const searchParams = useSearchParams();
+//   const teamId = searchParams.get("teamId");
 
 
 //   const [mounted, setMounted] = useState(false);
 //   const [isLoggedIn, setIsLoggedIn] = useState(false);
 //   const [team, setTeam] = useState(null);
 //   const [loading, setLoading] = useState(false);
+//   const [session, setSession] = useState(null);
 
 //   const [products, setProducts] = useState([]);
 //   const [selectedProduct, setSelectedProduct] = useState(null);
@@ -99,9 +106,17 @@
 //   const [selectedBatch, setSelectedBatch] = useState(null);
 //   const [allocations, setAllocations] = useState([]);
 //   const [searchText, setSearchText] = useState("");
+//   const [assistants, setAssistants] = useState([]);
+//   const [lastStopTime, setLastStopTime] = useState(null);
 
 
 
+//   const tabLabel = (text, count) => (
+//     <div style={{ display: "flex", gap: 6 }}>
+//       <span>{text}</span>
+//       <span style={{ fontWeight: 500 }}>{count}</span>
+//     </div>
+//   );
 
 //   const [allocationForm, setAllocationForm] = useState({
 //     rack: null,
@@ -113,13 +128,130 @@
 //     (b) => b.batch_no === selectedBatch?.batch_no,
 //   );
 
+
+//   const fetchLoggedInTeam = async () => {
+//     try {
+//       if (!teamId) {
+//         message.error("Invalid access");
+//         window.location.href = "/";
+//         return;
+//       }
+
+
+
+
+//       const { data, error } = await supabase
+//         .from("counting_sessions")
+//         .select(`
+//         id,
+//         sessions_start,
+//         sessions_stop,
+//         last_activity,
+//         team_id,
+//         teams (
+//           id,
+//           username,
+//           team_leader,
+//           assistants  
+//         )
+//       `)
+//         .eq("cycle_id", Number(cycleId))
+//         .eq("team_id", Number(teamId))
+//         .is("sessions_stop", null)
+//         .maybeSingle();
+
+//       if (error) throw error;
+
+//       if (!data) {
+//         message.error("Please login first");
+//         window.location.href = "/";
+//         return;
+//       }
+
+//       const row = data;
+
+//       console.log("TEAM DATA:", row.teams);
+
+//       setTeam(row.teams);
+//       setSession(row);
+//       setIsLoggedIn(true);
+
+
+
+//       const { data: lastSession } = await supabase
+//         .from("counting_sessions")
+//         .select("sessions_stop")
+//         .eq("cycle_id", Number(cycleId))
+//         .eq("team_id", Number(teamId))
+//         .not("sessions_stop", "is", null)
+//         .order("id", { ascending: false })
+//         .limit(1)
+//         .maybeSingle();
+
+//       setLastStopTime(lastSession?.sessions_stop || null);
+
+
+
+//       // ✅ NEW: Parse assistants safely
+//       try {
+//         const parsedAssistants = JSON.parse(
+//           row.teams?.assisatants || "[]"
+//         );
+//         setAssistants(row.teams?.assistants || []);
+//       } catch (e) {
+//         console.error("Assistant parse error:", e);
+//         setAssistants([]);
+//       }
+
+//     } catch (err) {
+//       console.log("ERROR:", err);
+//       console.log("❌ MESSAGE:", err?.message);
+//     }
+//   };
+
+
+
+//   const handleLogout = async () => {
+//     try {
+//       if (!session?.id) {
+//         message.error("No active session");
+//         return;
+//       }
+
+//       const { error } = await supabase
+//         .from("counting_sessions")
+//         .update({
+//           sessions_stop: new Date(),
+//         })
+//         .eq("id", session.id);
+
+//       if (error) throw error;
+
+//       message.success("Logged out successfully");
+
+//       setIsLoggedIn(false);
+//       window.location.href = "/cyclecount";
+//     } catch (err) {
+//       console.error("Logout error:", err);
+//       message.error("Logout failed");
+//     }
+//   };
+
+
+
+
+
+
+
 //   useEffect(() => {
 //     setMounted(true);
-//     if (window.location.hostname === "localhost") {
-//       setIsLoggedIn(true);
-//       setTeam({ id: 0, team_leader: "Developers Mode" });
-//     }
-//   }, []);
+//     fetchLoggedInTeam(); // ✅ ALWAYS check session from DB
+//   }, [cycleId]);
+
+
+
+
+
 
 //   useEffect(() => {
 //     setSelectedWarehouse(null);
@@ -131,61 +263,47 @@
 //     }
 //   }, [isLoggedIn, cycleId]);
 
+
+
 //   useEffect(() => {
 //     if (!selectedProduct) return;
 
-//     const allSubmitted = (selectedProduct.systemUnits || []).every(
-//       (u) => u.status === "submitted",
+//     const relevantUnits = (selectedProduct.systemUnits || []).filter(
+//       (u) =>
+//         Number(u.sys_quantity || 0) > 0 &&
+//         (u.status !== "submitted" || Number(u.count_quantity || 0) > 0)
 //     );
 
-//     // ✅ If ALL are submitted → only allow new row
-//     // if (allSubmitted) {
-//     //   setCountingUnits([
-//     //     {
-//     //       tempId: "new-only",
-//     //       batch_no: "",
-//     //       expiry_date: null,
-//     //       quantity: null,
-//     //       isSystem: false, // 👈 important (editable)
-//     //     },
-//     //   ]);
-//     //   return;
-//     // }
+//     const pendingUnits = relevantUnits.filter(
+//       (u) => u.status === "pending" || u.status === "editable" || u.status === "recount"
+//     );
 
-//     if (allSubmitted) {
-//       setCountingUnits([]); // ✅ No rows initially
+//     if (pendingUnits.length === 0) {
+//       setCountingUnits([]);
 //       return;
 //     }
 
-//     // 👇 existing logic
-// const pendingUnits = (selectedProduct.systemUnits || []).filter((u) => {
-//   const qty = Number(u.count_quantity);
-//   return u.status !== "submitted" && qty && qty > 0;
-// });
+//     setCountingUnits(
+//       pendingUnits.map((unit, index) => ({
+//         tempId: `system-${index}`,
+//         id: unit.id,
+//         batch_no: unit.count_batch_no || unit.sys_batch_no || "",
+//         expiry_date:
+//           unit.count_expiry_date || unit.sys_expiry_date || null,
 
-//     if (pendingUnits.length === 0) {
-//       setCountingUnits([
-//         {
-//           tempId: "empty-row",
-//           batch_no: "",
-//           expiry_date: null,
-//           quantity: null,
-//           isSystem: false,
-//         },
-//       ]);
-//     } else {
-//       setCountingUnits(
-//         pendingUnits.map((unit, index) => ({
-//           tempId: `system-${index}`,
-//           id: unit.id,
-//           batch_no: unit.count_batch_no || unit.sys_batch_no || "",
-//           expiry_date: unit.count_expiry_date || unit.sys_expiry_date || null,
-//           quantity: null,
-//           isSystem: true, // 👈 system rows still read-only
-//         })),
-//       );
-//     }
-//   }, [selectedProduct]);
+//         quantity:
+//           activeTab === "editable"
+//             ? Number(unit.count_quantity ?? 0)
+//             : null,
+
+//         mrp: unit.mrp || null,
+
+//         isSystem: true,
+//         status: unit.status,
+//       }))
+//     );
+
+//   }, [selectedProduct, activeTab]); // ✅ ALWAYS SAME LENGTH
 
 //   const totals = useMemo(() => {
 //     if (!selectedProduct) return { history: 0, pending: 0, total: 0 };
@@ -224,6 +342,7 @@
 //           count_quantity,
 //           counted_at,
 //           sl_no,
+//           mrp,
 //           item_master (
 //             id,
 //             item_name
@@ -261,8 +380,12 @@
 
 //         acc[itemId].systemUnits.push(curr);
 
+
+
 //         if (curr.status === "pending") {
 //           acc[itemId].status = "pending";
+//         } else if (curr.status === "editable") {
+//           acc[itemId].status = "editable";
 //         }
 
 //         return acc;
@@ -295,111 +418,222 @@
 //     setLoading(true);
 
 //     try {
-//       const activeUnits = countingUnits.filter((u) => u.quantity !== null);
+//       const processedUnits = countingUnits.map((u) => {
+//         if (u.isSystem) {
+//           const original = selectedProduct.systemUnits.find(
+//             (s) => s.id === u.id
+//           );
 
-//       for (const unit of activeUnits) {
+//           const sysQty = Number(original?.sys_quantity || 0);
+
+//           if (u.quantity === null && sysQty === 0) {
+//             return {
+//               ...u,
+//               quantity: 0,
+//             };
+//           }
+//         }
+
+//         return u;
+//       });
+
+//       console.log("FINAL UNITS:", processedUnits);
+
+//       for (const unit of processedUnits) {
+//         if (unit.quantity === null && !unit.isSystem) continue;
+
 //         const payload = {
-//           count_quantity: unit.quantity,
+//           count_quantity: unit.quantity ?? 0,
 //           count_batch_no: unit.batch_no || null,
 //           count_expiry_date: unit.expiry_date
 //             ? dayjs(unit.expiry_date).format("YYYY-MM-DD")
 //             : null,
 //           status: "submitted",
 //           counted_at: new Date(),
+
+//           // ✅ FIX ADDED
+//           team_id: Number(teamId),
+//           sl_no: selectedProduct.sl_no,
+//           mrp: unit.mrp ?? null,
 //         };
 
-//         if (unit.isSystem)
-//           await supabase.from("cycle_items").update(payload).eq("id", unit.id);
-//         else
+//         console.log("📦 PAYLOAD:", payload);
+
+//         if (unit.isSystem) {
+//           await supabase
+//             .from("cycle_items")
+//             .update(payload)
+//             .eq("id", unit.id);
+//         } else {
 //           await supabase.from("cycle_items").insert([
 //             {
 //               ...payload,
+
+//               // required for new rows
 //               cycle_id: selectedProduct.cycle_id,
 //               item_id: selectedProduct.id,
 //             },
 //           ]);
+//         }
+//       }
+
+//       // 🔥 ZERO SYSTEM BATCH FIX ALSO NEEDS TEAM + SL
+//       const zeroSystemBatches = selectedProduct.systemUnits.filter(
+//         (u) =>
+//           Number(u.sys_quantity || 0) === 0 &&
+//           u.status !== "submitted"
+//       );
+
+//       console.log("ZERO BATCHES:", zeroSystemBatches);
+
+//       for (const u of zeroSystemBatches) {
+//         await supabase
+//           .from("cycle_items")
+//           .update({
+//             count_quantity: 0,
+//             count_batch_no: u.sys_batch_no,
+//             count_expiry_date: u.sys_expiry_date || null,
+//             status: "submitted",
+//             counted_at: new Date(),
+
+//             // ✅ IMPORTANT FIX
+//             team_id: Number(teamId),
+//             sl_no: selectedProduct.sl_no,
+//           })
+//           .eq("id", u.id);
 //       }
 
 //       message.success("Logs Saved");
 
 //       const selectedId = selectedProduct.id;
 
-//       // ✅ WAIT for fresh data
 //       const updatedProducts = await fetchInventory();
-
-//       // ✅ Use fresh data (not old state)
 //       const updated = updatedProducts.find((p) => p.id === selectedId);
 
 //       setSelectedProduct(updated || null);
 //     } catch (e) {
+//       console.error(e);
 //       message.error("Error Saving");
 //     } finally {
 //       setLoading(false);
 //     }
 //   };
 
+
+
+
+
+//   const tabCounts = useMemo(() => {
+//     return {
+//       all: products.length,
+
+//       pending: products.filter((p) =>
+//         p.systemUnits.some((u) => u.status === "pending")
+//       ).length,
+
+//       submitted: products.filter((p) =>
+//         p.systemUnits.every((u) => u.status === "submitted")
+//       ).length,
+
+//       editable: products.filter((p) =>
+//         p.systemUnits.some((u) => u.status === "editable")
+//       ).length,
+
+//       recount: products.filter((p) =>
+//         p.systemUnits.some(
+//           (u) =>
+//             u.status === "recount" &&
+//             Number(u.count_quantity || 0) !== Number(u.sys_quantity || 0)
+//         )
+//       ).length,
+//     };
+//   }, [products]);
+
+
+
+
+
+
+
 //   const filteredItems = useMemo(() => {
-//     let data =
-//       activeTab === "all"
-//         ? products
-//         : products.filter((p) => p.status === activeTab);
+//     let data;
+
+//     if (activeTab === "all") {
+//       data = products;
+//     }
+//     else if (activeTab === "pending") {
+//       data = products.filter((p) =>
+//         p.systemUnits.some((u) => u.status === "pending")
+//       );
+//     }
+//     else if (activeTab === "submitted") {
+//       data = products.filter((p) =>
+//         p.systemUnits.every((u) => u.status === "submitted")
+//       );
+//     }
+//     else if (activeTab === "editable") {
+//       data = products.filter((p) =>
+//         p.systemUnits.some((u) => u.status === "editable")
+//       );
+//     }
+//     else if (activeTab === "recount") {
+//       data = products.filter((p) =>
+//         p.systemUnits.some(
+//           (u) =>
+//             u.status === "recount" &&
+//             Number(u.count_quantity || 0) !== Number(u.sys_quantity || 0)
+//         )
+//       );
+//     }
+//     else {
+//       data = [];
+//     }
 
 //     if (!searchText) return data;
 
 //     return data.filter((p) =>
-//       p.item_name?.toLowerCase().includes(searchText.toLowerCase()),
+//       p.item_name?.toLowerCase().includes(searchText.toLowerCase())
 //     );
 //   }, [products, activeTab, searchText]);
 
-// const getOptions = (field, val, currentId) => {
-//   const uniqueVals = new Map();
 
-//   // ✅ DEFINE batchTotals here
-//   const batchTotals = {};
 
-//   // ✅ Step 1: Group totals
-//   selectedProduct?.systemUnits?.forEach((u) => {
-//     if (u.status !== "submitted") return;
 
-//     const batch = u.count_batch_no || u.sys_batch_no;
-//     const qty = Number(u.count_quantity) || 0;
 
-//     if (!batch) return;
 
-//     if (!batchTotals[batch]) batchTotals[batch] = 0;
-//     batchTotals[batch] += qty;
-//   });
+//   const getOptions = (value) => {
+//     if (!selectedProduct) return [];
 
-//   // ✅ Step 2: Only add batches with total > 0
-//   Object.entries(batchTotals).forEach(([batch, total]) => {
-//     if (total > 0) {
-//       uniqueVals.set(batch, "History");
-//     }
-//   });
+//     const unique = new Map();
 
-//   // ✅ Step 3: Add active (typing rows)
-//   countingUnits.forEach((u) => {
-//     if (u.tempId !== currentId && u.batch_no) {
-//       uniqueVals.set(u.batch_no, "Active");
-//     }
-//   });
+//     selectedProduct.systemUnits.forEach((u) => {
+//       const batch = u.sys_batch_no || u.count_batch_no;
+//       const expiry = u.sys_expiry_date || u.count_expiry_date;
 
-//   // ✅ Step 4: Return filtered options
-//   return Array.from(uniqueVals.entries())
-//     .filter(([v]) => !val || v.toLowerCase().includes(val.toLowerCase()))
-//     .map(([v, type]) => ({
-//       key: `opt-${v}-${type}`,
-//       value: v,
-//       label: (
-//         <div style={{ display: "flex", justifyContent: "space-between" }}>
-//           <span>{v}</span>
-//           <Tag variant="outlined" style={{ fontSize: 9 }}>
-//             {type}
-//           </Tag>
-//         </div>
-//       ),
-//     }));
-// };
+//       if (!batch) return;
+
+//       if (!unique.has(batch)) {
+//         unique.set(batch, expiry);
+//       }
+//     });
+
+//     return Array.from(unique.entries())
+//       .filter(([batch]) =>
+//         !value || batch.toLowerCase().includes(value.toLowerCase())
+//       )
+//       .map(([batch, expiry]) => ({
+//         value: batch,
+//         label: (
+//           <div style={{ display: "flex", justifyContent: "space-between" }}>
+//             <span>{batch}</span>
+//             <span style={{ fontSize: 11, color: "#888" }}>
+//               {expiry ? dayjs(expiry).format("DD-MM-YY") : ""}
+//             </span>
+//           </div>
+//         ),
+//         expiry,
+//       }));
+//   };
 
 //   const loadWarehouseBatches = async (warehouseId) => {
 //     // You should fetch this from DB later
@@ -427,8 +661,8 @@
 //     }))
 //       .filter((b) => b.available_qty > 0); // 🚀 EXTRA SAFETY
 
-//         console.log("Grouped batches:", grouped);
-//   console.log("Formatted batches:", formatted);
+//     console.log("Grouped batches:", grouped);
+//     console.log("Formatted batches:", formatted);
 
 //     setWarehouseBatches(formatted);
 //   };
@@ -528,6 +762,11 @@
 // }
 // `;
 
+
+//   if (!mounted || !isLoggedIn) {
+//     return null;
+//   }
+
 //   return (
 //     <div
 //       style={{
@@ -540,14 +779,79 @@
 //       <style>{modernStyles}</style>
 //       {isLoggedIn && (
 //         <Card
+
 //           variant={false}
 //           style={{
 //             borderRadius: 12,
 //             boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
 //           }}
 //         >
+//           <Row justify="space-between" align="middle" style={{ marginBottom: 10 }}>
+
+//             {/* LEFT SIDE */}
+//             <div>
+//               <Title level={5} style={{ margin: 0 }}>
+//                 Cycle Counting
+//               </Title>
+//               <Text type="secondary" style={{ fontSize: 12 }}>
+//                 Cycle ID: {cycleId}
+//               </Text>
+//             </div>
+
+//             {/* RIGHT SIDE (🔥 THIS IS WHAT YOU WANT) */}
+//             {team && session && (
+//               <div style={{ textAlign: "right" }}>
+
+//                 <div>
+//                   <Tag color="blue">
+//                     👤 {team.username}
+//                   </Tag>
+
+//                   <div>
+
+//                   </div>
+
+//                   {/* ✅ Assistants */}
+//                   {assistants.length > 0 && (
+//                     <div style={{ marginTop: 4 }}>
+//                       {assistants.map((a) => (
+//                         <Tag key={a.id} color="green">
+//                           🧑 {a.name}
+//                         </Tag>
+//                       ))}
+//                     </div>
+//                   )}
+//                 </div>
+
+//                 <div style={{ fontSize: 11, marginTop: 4 }}>
+//                   <Text type="secondary">
+//                     🟢 Started: {dayjs(session.sessions_start).format("DD-MM-YY hh:mm")}
+//                   </Text>
+//                 </div>
+
+//                 {/* <div style={{ fontSize: 11 }}>
+//                   <Text type="secondary">
+//                     ⏱ Last Stop:{" "}
+//                     {lastStopTime
+//                       ? dayjs(lastStopTime).format("DD-MM-YY hh:mm")
+//                       : "No previous session"}
+//                   </Text>
+//                 </div> */}
+
+
+//                 <Button
+//                   danger
+//                   size="small"
+//                   style={{ marginTop: 6 }}
+//                   onClick={handleLogout}
+//                 >
+//                   Logout
+//                 </Button>
+//               </div>
+//             )}
+//           </Row>
 //           <Row gutter={24}>
-//             <Col span={8} className="no-print">
+//             <Col span={10} className="no-print">
 //               <Input
 //                 placeholder="Search item..."
 //                 allowClear
@@ -563,10 +867,56 @@
 //                   setActiveTab(key);
 //                   setSelectedProduct(null); // 👈 Reset selection when tab changes
 //                 }}
+
+
+
+
 //                 items={[
-//                   { key: "all", label: "All" },
-//                   { key: "pending", label: "Pending" },
-//                   { key: "submitted", label: "Submitted" },
+//                   {
+//                     key: "all",
+//                     label: (
+//                       <span> All{" "}
+//                         <Badge count={tabCounts.all} color="blue" overflowCount={999999}>
+//                         </Badge>
+//                       </span>
+//                     ),
+//                   },
+//                   {
+//                     key: "pending",
+//                     label: (
+//                       <span> Pending{" "}
+//                         <Badge count={tabCounts.pending} color="orange" overflowCount={999999}>
+//                         </Badge>
+//                       </span>
+//                     ),
+//                   },
+//                   {
+//                     key: "submitted",
+//                     label: (
+//                       <span> Submitted{" "}
+//                         <Badge count={tabCounts.submitted} color="green" overflowCount={999999}>
+//                         </Badge>
+//                       </span>
+//                     ),
+//                   },
+//                   {
+//                     key: "recount",
+//                     label: (
+//                       <span> Recount{" "}
+//                         <Badge count={tabCounts.recount} color="purple" overflowCount={999999}>
+//                         </Badge>
+//                       </span>
+//                     ),
+//                   },
+//                   {
+//                     key: "editable",
+//                     label: (
+//                       <span> Editable{" "}
+//                         <Badge count={tabCounts.editable} color="yellow" overflowCount={999999}>
+//                         </Badge>
+//                       </span>
+//                     ),
+//                   },
 //                 ]}
 //               />
 //               <Table
@@ -602,7 +952,7 @@
 //               />
 //             </Col>
 
-//             <Col span={16} className="thermal-slip">
+//             <Col span={14} className="thermal-slip">
 //               {selectedProduct ? (
 //                 <div>
 //                   <div
@@ -615,7 +965,7 @@
 //                   >
 //                     <div style={{ marginBottom: 10 }}>
 //                       <Title level={5} style={{ margin: 0 }}>
-//                         {selectedProduct.item_name}
+//                         {selectedProduct.sl_no} - {selectedProduct.item_name}
 //                       </Title>
 //                       <Text type="secondary" style={{ fontSize: 12 }}>
 //                         Cycle ID: {selectedProduct.cycle_id}
@@ -680,9 +1030,32 @@
 //                     </Col>
 //                   </Row>
 
-//                   {/* {selectedProduct.systemUnits
-//                     .filter((u) => u.status === "submitted" && Number(u.count_quantity) > 0)
-//                     .map((u, i) => (
+//                   {Object.values(
+//                     (selectedProduct?.systemUnits || [])
+//                       .filter((u) => {
+//                         const isSubmitted = u.status === "submitted";
+//                         const hasQty = Number(u.count_quantity) > 0; // Use > 0 to strictly hide 0 and NULL
+//                         return isSubmitted && hasQty;
+//                       })
+//                       .reduce((acc, u) => {
+//                         const batch = u.count_batch_no || u.count_serial_no || "N/A";
+//                         const qty = Number(u.count_quantity) || 0;
+
+//                         if (!acc[batch]) {
+//                           acc[batch] = {
+//                             batch,
+//                             qty: 0,
+//                             expiry: u.count_expiry_date,
+//                             lastDate: u.counted_at,
+//                           };
+//                         }
+
+//                         acc[batch].qty += qty;
+//                         return acc;
+//                       }, {})
+//                   )
+//                     // .filter((b) => b.qty > 0) // ✅ ONLY batches with total > 0
+//                     .map((b, i) => (
 //                       <Row
 //                         key={`hist-${i}`}
 //                         gutter={8}
@@ -693,84 +1066,28 @@
 //                         }}
 //                       >
 //                         <Col span={8} style={{ textAlign: "center" }}>
-//                           <Text style={{ fontSize: 13 }}>
-//                             {u.count_batch_no || u.count_serial_no}
-//                           </Text>
+//                           <Text style={{ fontSize: 13 }}>{b.batch}</Text>
 //                         </Col>
+
 //                         <Col span={5} style={{ textAlign: "center" }}>
 //                           <Text style={{ fontSize: 12 }}>
-//                             {u.count_expiry_date
-//                               ? dayjs(u.count_expiry_date).format("DD-MM-YYYY")
+//                             {b.expiry
+//                               ? dayjs(b.expiry).format("DD-MM-YYYY")
 //                               : "N/A"}
 //                           </Text>
 //                         </Col>
+
 //                         <Col span={4} style={{ textAlign: "center" }}>
-//                           <Text style={{ fontSize: 13 }}>
-//                             {u.count_quantity}
-//                           </Text>
+//                           <Text style={{ fontSize: 13 }}>{b.qty}</Text>
 //                         </Col>
-//                         <Col span={5} style={{ textAlign: "center" }}>
+
+//                         <Col span={5} style={{ textAlign: "center" }} className="no-print">
 //                           <Text type="secondary" style={{ fontSize: 11 }}>
-//                             {dayjs(u.counted_at).format("DD/MM/YY HH:mm")}
+//                             {dayjs(b.lastDate).format("DD/MM HH:mm")}
 //                           </Text>
 //                         </Col>
 //                       </Row>
-//                     ))} */}
-// {Object.values(
-//   selectedProduct.systemUnits
-//     .filter((u) => u.status === "submitted")
-//     .reduce((acc, u) => {
-//       const batch = u.count_batch_no || u.count_serial_no || "N/A";
-//       const qty = Number(u.count_quantity) || 0;
-
-//       if (!acc[batch]) {
-//         acc[batch] = {
-//           batch,
-//           qty: 0,
-//           expiry: u.count_expiry_date,
-//           lastDate: u.counted_at,
-//         };
-//       }
-
-//       acc[batch].qty += qty;
-
-//       return acc;
-//     }, {})
-// )
-//   .filter((b) => b.qty > 0) // ✅ ONLY batches with total > 0
-//   .map((b, i) => (
-//     <Row
-//       key={`hist-${i}`}
-//       gutter={8}
-//       style={{
-//         marginBottom: 4,
-//         borderBottom: "1px solid #f0f0f0",
-//         paddingBottom: 4,
-//       }}
-//     >
-//       <Col span={8} style={{ textAlign: "center" }}>
-//         <Text style={{ fontSize: 13 }}>{b.batch}</Text>
-//       </Col>
-
-//       <Col span={5} style={{ textAlign: "center" }}>
-//         <Text style={{ fontSize: 12 }}>
-//           {b.expiry
-//             ? dayjs(b.expiry).format("DD-MM-YYYY")
-//             : "N/A"}
-//         </Text>
-//       </Col>
-
-//       <Col span={4} style={{ textAlign: "center" }}>
-//         <Text style={{ fontSize: 13 }}>{b.qty}</Text>
-//       </Col>
-
-//       <Col span={5} style={{ textAlign: "center" }}>
-//         <Text type="secondary" style={{ fontSize: 11 }}>
-//           {dayjs(b.lastDate).format("DD/MM/YY HH:mm")}
-//         </Text>
-//       </Col>
-//     </Row>
-// ))}
+//                     ))}
 
 //                   <Divider titlePlacement="left" plain>
 //                     <Text type="secondary" style={{ fontSize: 10 }}>
@@ -786,17 +1103,20 @@
 //                       borderBottom: "1px solid #f0f0f0",
 //                     }}
 //                   >
-//                     <Col span={10}>
+//                     <Col span={8}>
 //                       <Text strong style={{ fontSize: 10 }}>
 //                         Batch/Serial
 //                       </Text>
 //                     </Col>
-//                     <Col span={8}>
+//                     <Col span={6}>
 //                       <Text strong style={{ fontSize: 10 }}>
 //                         Expiry Date
 //                       </Text>
 //                     </Col>
-//                     <Col span={4}>
+//                     <Col span={3}>
+//                       <Text strong style={{ fontSize: 10 }}>MRP</Text>
+//                     </Col>
+//                     <Col span={3}>
 //                       <Text strong style={{ fontSize: 10 }}>
 //                         Count Qty
 //                       </Text>
@@ -804,66 +1124,93 @@
 //                     <Col span={2}></Col>
 //                   </Row>
 
-//                   {countingUnits.map((u) => (
-//                     <Row key={u.tempId} gutter={5} style={{ marginBottom: 10 }}>
-//                       <Col span={10}>
-//                         <AutoComplete
-//                           style={{ width: "100%" }}
-//                           options={getOptions("batch_no", u.batch_no, u.tempId)}
-//                           value={u.batch_no}
-//                           onChange={(v) => updateField(u.tempId, "batch_no", v)}
-//                           disabled={u.isSystem}
-//                         >
-//                           {/* Removed prefix entirely for a cleaner greyscale look */}
-//                           <Input
-//                             placeholder="Enter ID..."
-//                             style={{ textAlign: "left" }}
-//                           />
-//                         </AutoComplete>
-//                       </Col>
-//                       <Col span={8}>
-//                         <DatePicker
-//                           style={{ width: "100%" }}
-//                           format="DD-MM-YYYY"
-//                           suffixIcon={u.isSystem ? null : undefined}
-//                           value={u.expiry_date ? dayjs(u.expiry_date) : null}
-//                           onChange={(date) =>
-//                             updateField(u.tempId, "expiry_date", date)
-//                           }
-//                           disabled={u.isSystem}
-//                         />
-//                       </Col>
-//                       <Col span={4}>
-//                         <InputNumber
-//                           placeholder=""
-//                           style={{ width: "100%" }}
-//                           controls={false}
-//                           value={
-//                             u.quantity === 0 || u.quantity === null
-//                               ? null
-//                               : u.quantity
-//                           }
-//                           onChange={(v) => updateField(u.tempId, "quantity", v)}
-//                         />
-//                       </Col>
-//                       <Col span={2}>
-//                         {!u.isSystem && (
-//                           <Button
-//                             danger
-//                             type="text"
-//                             icon={<DeleteOutlined />}
-//                             onClick={() =>
-//                               setCountingUnits(
-//                                 countingUnits.filter(
-//                                   (x) => x.tempId !== u.tempId,
-//                                 ),
-//                               )
+//                   {countingUnits
+//                     .filter((u) => {
+//                       // 1. Convert to Number to handle any string issues from the DB
+//                       const isZero = Number(u.count_quantity) === 0;
+
+//                       // 2. Check the status (ensure it matches your 'submitted' string exactly)
+//                       const isSubmitted = u.status === 'submitted';
+
+//                       // 3. Return FALSE only if BOTH are true (this "disables/hides" the row)
+//                       return !(isZero && isSubmitted);
+//                     })
+//                     .map((u) => (
+
+//                       <Row key={u.tempId} gutter={5} style={{ marginBottom: 10 }}>
+//                         <Col span={8}>
+//                           <AutoComplete
+//                             style={{ width: "100%" }}
+//                             options={getOptions(u.batch_no)}
+//                             value={u.batch_no}
+//                             onSelect={(val, option) => {
+//                               updateField(u.tempId, "batch_no", val);
+
+//                               // ✅ auto-fill expiry
+//                               if (option?.expiry) {
+//                                 updateField(u.tempId, "expiry_date", dayjs(option.expiry));
+//                               }
+//                             }}
+//                             onChange={(val) => updateField(u.tempId, "batch_no", val)}
+//                             disabled={u.isSystem}
+//                           >
+//                             <Input placeholder="Select Batch..." />
+//                           </AutoComplete>
+//                         </Col>
+
+
+//                         <Col span={6}>
+//                           <DatePicker
+//                             style={{ width: "100%" }}
+//                             format="DD-MM-YYYY"
+//                             suffixIcon={u.isSystem ? null : undefined}
+//                             value={u.expiry_date ? dayjs(u.expiry_date) : null}
+//                             onChange={(date) =>
+//                               updateField(u.tempId, "expiry_date", date)
 //                             }
+//                             disabled={u.isSystem}
 //                           />
-//                         )}
-//                       </Col>
-//                     </Row>
-//                   ))}
+//                         </Col>
+//                         <Col span={3}>
+//                           <InputNumber
+//                             placeholder="MRP"
+//                             style={{ width: "100%" }}
+//                             value={u.mrp}
+//                             onChange={(v) => updateField(u.tempId, "mrp", v)}
+
+//                           />
+//                         </Col>
+//                         <Col span={3}>
+//                           <InputNumber
+//                             placeholder=""
+//                             style={{ width: "100%" }}
+//                             controls={false}
+//                             value={
+//                               u.quantity === 0 || u.quantity === null
+//                                 ? null
+//                                 : u.quantity
+//                             }
+//                             onChange={(v) => updateField(u.tempId, "quantity", v)}
+//                           />
+//                         </Col>
+//                         <Col span={2}>
+//                           {!u.isSystem && (
+//                             <Button
+//                               danger
+//                               type="text"
+//                               icon={<DeleteOutlined />}
+//                               onClick={() =>
+//                                 setCountingUnits(
+//                                   countingUnits.filter(
+//                                     (x) => x.tempId !== u.tempId,
+//                                   ),
+//                                 )
+//                               }
+//                             />
+//                           )}
+//                         </Col>
+//                       </Row>
+//                     ))}
 
 //                   <Card
 //                     size="small"
@@ -925,30 +1272,33 @@
 //             </Col>
 //           </Row>
 //           {activeTab === "submitted" && selectedProduct && (
-//             <>
-//               <Divider />
+//             <div className="no-print">
+//               <>
+//                 <Divider />
 
-//               <div style={{ marginBottom: 16 }}>
-//                 <Text strong style={{ fontSize: 12 }}>
-//                   SELECT WAREHOUSE
-//                 </Text>
+//                 <div style={{ marginBottom: 16 }}>
+//                   <Text strong style={{ fontSize: 12 }}>
+//                     SELECT WAREHOUSE
+//                   </Text>
 
-//                 <Select
-//                   style={{ width: "100%", marginTop: 8 }}
-//                   placeholder="Select Warehouse"
-//                   value={selectedWarehouse}
-//                   onChange={(value) => {
-//                     setSelectedWarehouse(value);
-//                     loadWarehouseBatches(value);
-//                   }}
-//                   options={[
-//                     { value: "main", label: "Main Warehouse" },
-//                     { value: "godown-1", label: "Godown 1" },
-//                     { value: "godown-2", label: "Godown 2" },
-//                   ]}
-//                 />
-//               </div>
-//             </>
+//                   <Select
+//                     style={{ width: "100%", marginTop: 8 }}
+//                     placeholder="Select Warehouse"
+//                     value={selectedWarehouse}
+//                     onChange={(value) => {
+//                       setSelectedWarehouse(value);
+//                       loadWarehouseBatches(value);
+//                     }}
+//                     options={[
+//                       { value: "main", label: "Main Warehouse" },
+//                       { value: "godown-1", label: "Godown 1" },
+//                       { value: "godown-2", label: "Godown 2" },
+//                     ]}
+//                   />
+//                 </div>
+
+//               </>
+//             </div>
 //           )}
 //           {activeTab === "submitted" &&
 //             selectedProduct &&
@@ -1273,17 +1623,6 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -1394,6 +1733,27 @@ export default function YearEndPage() {
 
 
 
+  const tabLabel = (text, count) => (
+    <div style={{ display: "flex", gap: 6 }}>
+      <span>{text}</span>
+      <span style={{ fontWeight: 500 }}>{count}</span>
+    </div>
+  );
+
+
+
+  const unlockProduct = async (product) => {
+    if (!product) return;
+
+    await supabase
+      .from("cycle_items")
+      .update({
+        locked_by: null,
+        locked_at: null,
+      })
+      .eq("item_id", product.id);
+  };
+
 
 
   const [allocationForm, setAllocationForm] = useState({
@@ -1496,6 +1856,11 @@ export default function YearEndPage() {
         return;
       }
 
+      // ✅ ADD THIS BLOCK HERE (VERY IMPORTANT)
+      if (selectedProduct) {
+        await unlockProduct(selectedProduct);
+      }
+
       const { error } = await supabase
         .from("counting_sessions")
         .update({
@@ -1517,14 +1882,15 @@ export default function YearEndPage() {
 
 
 
-  // useEffect(() => {
-  //   setMounted(true);
-  //   if (window.location.hostname === "localhost") {
-  //     setIsLoggedIn(true);
-  //     setTeam({ id: 0, team_leader: "Developers Mode" });
-  //   }
-  // }, []);
+  useEffect(() => {
+    if (!isLoggedIn || !cycleId) return;
 
+    const interval = setInterval(() => {
+      fetchInventory(); // 🔥 refresh data
+    }, 5000); // every 5 seconds
+
+    return () => clearInterval(interval);
+  }, [isLoggedIn, cycleId]);
 
 
   useEffect(() => {
@@ -1534,7 +1900,19 @@ export default function YearEndPage() {
 
 
 
+  useEffect(() => {
+    const handleUnload = () => {
+      if (selectedProduct) {
+        unlockProduct(selectedProduct);
+      }
+    };
 
+    window.addEventListener("beforeunload", handleUnload);
+
+    return () => {
+      window.removeEventListener("beforeunload", handleUnload);
+    };
+  }, [selectedProduct]);
 
 
   useEffect(() => {
@@ -1547,50 +1925,47 @@ export default function YearEndPage() {
     }
   }, [isLoggedIn, cycleId]);
 
+
+
   useEffect(() => {
     if (!selectedProduct) return;
 
-    // Only consider units with sys_quantity > 0
     const relevantUnits = (selectedProduct.systemUnits || []).filter(
-      (u) => Number(u.sys_quantity || 0) > 0  // 👈 filter first
+      (u) =>
+        Number(u.sys_quantity || 0) > 0 &&
+        (u.status !== "submitted" || Number(u.count_quantity || 0) > 0)
     );
 
-    const allSubmitted = relevantUnits.every(
-      (u) => u.status === "submitted",
+    const pendingUnits = relevantUnits.filter(
+      (u) => u.status === "pending" || u.status === "editable" || u.status === "recount"
     );
 
-    if (allSubmitted) {
+    if (pendingUnits.length === 0) {
       setCountingUnits([]);
       return;
     }
 
-    const pendingUnits = relevantUnits.filter(
-      (u) => u.status !== "submitted"
+    setCountingUnits(
+      pendingUnits.map((unit, index) => ({
+        tempId: `system-${index}`,
+        id: unit.id,
+        batch_no: unit.count_batch_no || unit.sys_batch_no || "",
+        expiry_date:
+          unit.count_expiry_date || unit.sys_expiry_date || null,
+
+        quantity:
+          activeTab === "editable"
+            ? Number(unit.count_quantity ?? 0)
+            : null,
+
+        mrp: unit.mrp || null,
+
+        isSystem: true,
+        status: unit.status,
+      }))
     );
 
-    if (pendingUnits.length === 0) {
-      setCountingUnits([
-        {
-          tempId: "empty-row",
-          batch_no: "",
-          expiry_date: null,
-          quantity: null,
-          isSystem: false,
-        },
-      ]);
-    } else {
-      setCountingUnits(
-        pendingUnits.map((unit, index) => ({
-          tempId: `system-${index}`,
-          id: unit.id,
-          batch_no: unit.count_batch_no || unit.sys_batch_no || "",
-          expiry_date: unit.count_expiry_date || unit.sys_expiry_date || null,
-          quantity: null,
-          isSystem: true,
-        })),
-      );
-    }
-  }, [selectedProduct]);
+  }, [selectedProduct, activeTab]); // ✅ ALWAYS SAME LENGTH
 
   const totals = useMemo(() => {
     if (!selectedProduct) return { history: 0, pending: 0, total: 0 };
@@ -1629,6 +2004,7 @@ export default function YearEndPage() {
           count_quantity,
           counted_at,
           sl_no,
+          mrp,
           item_master (
             id,
             item_name
@@ -1650,6 +2026,8 @@ export default function YearEndPage() {
 
       console.log("✅ Total fetched rows:", allData.length);
 
+      
+
       // ✅ GROUPING LOGIC (same as your existing)
       const grouped = allData.reduce((acc, curr) => {
         const itemId = curr.item_id;
@@ -1666,8 +2044,12 @@ export default function YearEndPage() {
 
         acc[itemId].systemUnits.push(curr);
 
+
+
         if (curr.status === "pending") {
           acc[itemId].status = "pending";
+        } else if (curr.status === "editable") {
+          acc[itemId].status = "editable";
         }
 
         return acc;
@@ -1700,109 +2082,225 @@ export default function YearEndPage() {
     setLoading(true);
 
     try {
-      const activeUnits = countingUnits.filter((u) => u.quantity !== null);
+      const processedUnits = countingUnits.map((u) => {
+        if (u.isSystem) {
+          const original = selectedProduct.systemUnits.find(
+            (s) => s.id === u.id
+          );
 
-      for (const unit of activeUnits) {
+          const sysQty = Number(original?.sys_quantity || 0);
+
+          if (u.quantity === null && sysQty === 0) {
+            return {
+              ...u,
+              quantity: 0,
+            };
+          }
+        }
+
+        return u;
+      });
+
+      console.log("FINAL UNITS:", processedUnits);
+
+      for (const unit of processedUnits) {
+        if (unit.quantity === null && !unit.isSystem) continue;
+
         const payload = {
-          count_quantity: unit.quantity,
+          count_quantity: unit.quantity ?? 0,
           count_batch_no: unit.batch_no || null,
           count_expiry_date: unit.expiry_date
             ? dayjs(unit.expiry_date).format("YYYY-MM-DD")
             : null,
           status: "submitted",
           counted_at: new Date(),
+
+          // ✅ FIX ADDED
+          team_id: Number(teamId),
+          sl_no: selectedProduct.sl_no,
+          mrp: unit.mrp ?? null,
         };
 
-        if (unit.isSystem)
-          await supabase.from("cycle_items").update(payload).eq("id", unit.id);
-        else
+        console.log("📦 PAYLOAD:", payload);
+
+        if (unit.isSystem) {
+          await supabase
+            .from("cycle_items")
+            .update(payload)
+            .eq("id", unit.id);
+        } else {
           await supabase.from("cycle_items").insert([
             {
               ...payload,
+
+              // required for new rows
               cycle_id: selectedProduct.cycle_id,
               item_id: selectedProduct.id,
             },
           ]);
+        }
+      }
+
+      // 🔥 ZERO SYSTEM BATCH FIX ALSO NEEDS TEAM + SL
+      const zeroSystemBatches = selectedProduct.systemUnits.filter(
+        (u) =>
+          Number(u.sys_quantity || 0) === 0 &&
+          u.status !== "submitted"
+      );
+
+      console.log("ZERO BATCHES:", zeroSystemBatches);
+
+      for (const u of zeroSystemBatches) {
+        await supabase
+          .from("cycle_items")
+          .update({
+            count_quantity: 0,
+            count_batch_no: u.sys_batch_no,
+            count_expiry_date: u.sys_expiry_date || null,
+            status: "submitted",
+            counted_at: new Date(),
+
+            // ✅ IMPORTANT FIX
+            team_id: Number(teamId),
+            sl_no: selectedProduct.sl_no,
+          })
+          .eq("id", u.id);
       }
 
       message.success("Logs Saved");
 
       const selectedId = selectedProduct.id;
 
-      // ✅ WAIT for fresh data
       const updatedProducts = await fetchInventory();
-
-      // ✅ Use fresh data (not old state)
       const updated = updatedProducts.find((p) => p.id === selectedId);
 
       setSelectedProduct(updated || null);
     } catch (e) {
+      console.error(e);
       message.error("Error Saving");
     } finally {
       setLoading(false);
     }
   };
 
+
+
+
+
+  const tabCounts = useMemo(() => {
+    return {
+      all: products.length,
+
+      pending: products.filter((p) =>
+        p.systemUnits.some((u) => u.status === "pending")
+      ).length,
+
+      submitted: products.filter((p) =>
+        p.systemUnits.every((u) => u.status === "submitted")
+      ).length,
+
+      editable: products.filter((p) =>
+        p.systemUnits.some((u) => u.status === "editable")
+      ).length,
+
+      recount: products.filter((p) =>
+        p.systemUnits.some(
+          (u) =>
+            u.status === "recount" &&
+            Number(u.count_quantity || 0) !== Number(u.sys_quantity || 0)
+        )
+      ).length,
+    };
+  }, [products]);
+
+
+
+
+
+
+
   const filteredItems = useMemo(() => {
-    let data =
-      activeTab === "all"
-        ? products
-        : products.filter((p) => p.status === activeTab);
+    let data;
+
+    if (activeTab === "all") {
+      data = products;
+    }
+    else if (activeTab === "pending") {
+      data = products.filter((p) =>
+        p.systemUnits.some((u) => u.status === "pending")
+      );
+    }
+    else if (activeTab === "submitted") {
+      data = products.filter((p) =>
+        p.systemUnits.every((u) => u.status === "submitted")
+      );
+    }
+    else if (activeTab === "editable") {
+      data = products.filter((p) =>
+        p.systemUnits.some((u) => u.status === "editable")
+      );
+    }
+    else if (activeTab === "recount") {
+      data = products.filter((p) =>
+        p.systemUnits.some(
+          (u) =>
+            u.status === "recount" &&
+            Number(u.count_quantity || 0) !== Number(u.sys_quantity || 0)
+        )
+      );
+    }
+    else {
+      data = [];
+    }
 
     if (!searchText) return data;
 
-    return data.filter((p) =>
-      p.item_name?.toLowerCase().includes(searchText.toLowerCase()),
-    );
+    return data.filter((p) => {
+      const search = searchText.toLowerCase();
+
+      return (
+        p.item_name?.toLowerCase().includes(search) ||
+        String(p.sl_no || "").includes(search)
+      );
+    });
   }, [products, activeTab, searchText]);
 
-  const getOptions = (field, val, currentId) => {
-    const uniqueVals = new Map();
 
-    // ✅ DEFINE batchTotals here
-    const batchTotals = {};
 
-    // ✅ Step 1: Group totals
-    selectedProduct?.systemUnits?.forEach((u) => {
-      if (u.status !== "submitted") return;
 
-      const batch = u.count_batch_no || u.sys_batch_no;
-      const qty = Number(u.count_quantity) || 0;
+
+
+  const getOptions = (value) => {
+    if (!selectedProduct) return [];
+
+    const unique = new Map();
+
+    selectedProduct.systemUnits.forEach((u) => {
+      const batch = u.sys_batch_no || u.count_batch_no;
+      const expiry = u.sys_expiry_date || u.count_expiry_date;
 
       if (!batch) return;
 
-      if (!batchTotals[batch]) batchTotals[batch] = 0;
-      batchTotals[batch] += qty;
-    });
-
-    // ✅ Step 2: Only add batches with total > 0
-    Object.entries(batchTotals).forEach(([batch, total]) => {
-      if (total > 0) {
-        uniqueVals.set(batch, "History");
+      if (!unique.has(batch)) {
+        unique.set(batch, expiry);
       }
     });
 
-    // ✅ Step 3: Add active (typing rows)
-    countingUnits.forEach((u) => {
-      if (u.tempId !== currentId && u.batch_no) {
-        uniqueVals.set(u.batch_no, "Active");
-      }
-    });
-
-    // ✅ Step 4: Return filtered options
-    return Array.from(uniqueVals.entries())
-      .filter(([v]) => !val || v.toLowerCase().includes(val.toLowerCase()))
-      .map(([v, type]) => ({
-        key: `opt-${v}-${type}`,
-        value: v,
+    return Array.from(unique.entries())
+      .filter(([batch]) =>
+        !value || batch.toLowerCase().includes(value.toLowerCase())
+      )
+      .map(([batch, expiry]) => ({
+        value: batch,
         label: (
           <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span>{v}</span>
-            <Tag variant="outlined" style={{ fontSize: 9 }}>
-              {type}
-            </Tag>
+            <span>{batch}</span>
+            <span style={{ fontSize: 11, color: "#888" }}>
+              {expiry ? dayjs(expiry).format("DD-MM-YY") : ""}
+            </span>
           </div>
         ),
+        expiry,
       }));
   };
 
@@ -1931,6 +2429,13 @@ export default function YearEndPage() {
 .selected-row {
   background: #e6f4ff !important;
 }
+
+/* ✅ ADD THIS */
+.locked-row {
+  background: #fff1f0 !important;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
 `;
 
 
@@ -1973,12 +2478,23 @@ export default function YearEndPage() {
             {team && session && (
               <div style={{ textAlign: "right" }}>
 
+
+
+   
                 <div>
                   <Tag color="blue">
-                    👤 {team.username}
+                    ⭐ {team.username}
                   </Tag>
 
                   <div>
+
+                                 {team.team_leader && (
+                  <div style={{ marginBottom: 4 }}>
+                    <Tag color="gold">
+                      👤 Leader: {team.team_leader}
+                    </Tag>
+                  </div>
+                )}
 
                   </div>
 
@@ -2022,7 +2538,7 @@ export default function YearEndPage() {
             )}
           </Row>
           <Row gutter={24}>
-            <Col span={8} className="no-print">
+            <Col span={10} className="no-print">
               <Input
                 placeholder="Search item..."
                 allowClear
@@ -2038,18 +2554,116 @@ export default function YearEndPage() {
                   setActiveTab(key);
                   setSelectedProduct(null); // 👈 Reset selection when tab changes
                 }}
+
+
+
+
                 items={[
-                  { key: "all", label: "All" },
-                  { key: "pending", label: "Pending" },
-                  { key: "submitted", label: "Submitted" },
+                  {
+                    key: "all",
+                    label: (
+                      <span> All{" "}
+                        <Badge count={tabCounts.all} color="blue" overflowCount={999999}>
+                        </Badge>
+                      </span>
+                    ),
+                  },
+                  {
+                    key: "pending",
+                    label: (
+                      <span> Pending{" "}
+                        <Badge count={tabCounts.pending} color="orange" overflowCount={999999}>
+                        </Badge>
+                      </span>
+                    ),
+                  },
+                  {
+                    key: "submitted",
+                    label: (
+                      <span> Submitted{" "}
+                        <Badge count={tabCounts.submitted} color="green" overflowCount={999999}>
+                        </Badge>
+                      </span>
+                    ),
+                  },
+                  {
+                    key: "recount",
+                    label: (
+                      <span> Recount{" "}
+                        <Badge count={tabCounts.recount} color="purple" overflowCount={999999}>
+                        </Badge>
+                      </span>
+                    ),
+                  },
+                  {
+                    key: "editable",
+                    label: (
+                      <span> Editable{" "}
+                        <Badge count={tabCounts.editable} color="yellow" overflowCount={999999}>
+                        </Badge>
+                      </span>
+                    ),
+                  },
                 ]}
               />
               <Table
                 dataSource={filteredItems}
                 // columns={[{ title: "Item Name", dataIndex: "item_name" }]}
                 rowKey="id"
-                rowClassName={() => "modern-row"}
-                onRow={(r) => ({ onClick: () => setSelectedProduct(r) })}
+                rowClassName={(record) => {
+                  const lockedBy = record.systemUnits?.[0]?.locked_by;
+
+                  if (lockedBy && lockedBy !== Number(teamId)) {
+                    return "locked-row";
+                  }
+
+                  return "modern-row";
+                }}
+
+
+
+                onRow={(r) => ({
+                  onClick: async () => {
+                    try {
+                      // ✅ 1. Unlock previous product
+                      if (selectedProduct?.id) {
+                        await unlockProduct(selectedProduct);
+                      }
+
+                      const lockedBy = r.systemUnits?.[0]?.locked_by;
+                      const lockedAt = r.systemUnits?.[0]?.locked_at;
+
+                      // ✅ 2. Check if locked by another user (with timeout 10 mins)
+                      const isLocked =
+                        lockedBy &&
+                        lockedBy !== Number(teamId) &&
+                        dayjs().diff(dayjs(lockedAt), "minute") < 10;
+
+                      if (isLocked) {
+                        message.warning("⚠️ This item is being used by another user");
+                        return;
+                      }
+
+                      // ✅ 3. Lock current product
+                      await supabase
+                        .from("cycle_items")
+                        .update({
+                          locked_by: Number(teamId),
+                          locked_at: new Date(),
+                        })
+                        .eq("item_id", r.id);
+
+                      // ✅ 4. Select product
+                      setSelectedProduct(r);
+                    } catch (err) {
+                      console.error(err);
+                      message.error("Error locking item");
+                    }
+                  },
+                })}
+
+
+
                 pagination={false}
                 size="small"
                 scroll={{ y: "60vh" }}
@@ -2077,7 +2691,7 @@ export default function YearEndPage() {
               />
             </Col>
 
-            <Col span={16} className="thermal-slip">
+            <Col span={14} className="thermal-slip">
               {selectedProduct ? (
                 <div>
                   <div
@@ -2155,45 +2769,13 @@ export default function YearEndPage() {
                     </Col>
                   </Row>
 
-                  {/* {selectedProduct.systemUnits
-                    .filter((u) => u.status === "submitted" && Number(u.count_quantity) > 0)
-                    .map((u, i) => (
-                      <Row
-                        key={`hist-${i}`}
-                        gutter={8}
-                        style={{
-                          marginBottom: 4,
-                          borderBottom: "1px solid #f0f0f0",
-                          paddingBottom: 4,
-                        }}
-                      >
-                        <Col span={8} style={{ textAlign: "center" }}>
-                          <Text style={{ fontSize: 13 }}>
-                            {u.count_batch_no || u.count_serial_no}
-                          </Text>
-                        </Col>
-                        <Col span={5} style={{ textAlign: "center" }}>
-                          <Text style={{ fontSize: 12 }}>
-                            {u.count_expiry_date
-                              ? dayjs(u.count_expiry_date).format("DD-MM-YYYY")
-                              : "N/A"}
-                          </Text>
-                        </Col>
-                        <Col span={4} style={{ textAlign: "center" }}>
-                          <Text style={{ fontSize: 13 }}>
-                            {u.count_quantity}
-                          </Text>
-                        </Col>
-                        <Col span={5} style={{ textAlign: "center" }}>
-                          <Text type="secondary" style={{ fontSize: 11 }}>
-                            {dayjs(u.counted_at).format("DD/MM/YY HH:mm")}
-                          </Text>
-                        </Col>
-                      </Row>
-                    ))} */}
                   {Object.values(
-                    selectedProduct.systemUnits
-                      .filter((u) => u.status === "submitted")
+                    (selectedProduct?.systemUnits || [])
+                      .filter((u) => {
+                        const isSubmitted = u.status === "submitted";
+                        const hasQty = Number(u.count_quantity) > 0; // Use > 0 to strictly hide 0 and NULL
+                        return isSubmitted && hasQty;
+                      })
                       .reduce((acc, u) => {
                         const batch = u.count_batch_no || u.count_serial_no || "N/A";
                         const qty = Number(u.count_quantity) || 0;
@@ -2208,11 +2790,10 @@ export default function YearEndPage() {
                         }
 
                         acc[batch].qty += qty;
-
                         return acc;
                       }, {})
                   )
-                    .filter((b) => b.qty > 0) // ✅ ONLY batches with total > 0
+                    // .filter((b) => b.qty > 0) // ✅ ONLY batches with total > 0
                     .map((b, i) => (
                       <Row
                         key={`hist-${i}`}
@@ -2261,17 +2842,20 @@ export default function YearEndPage() {
                       borderBottom: "1px solid #f0f0f0",
                     }}
                   >
-                    <Col span={10}>
+                    <Col span={8}>
                       <Text strong style={{ fontSize: 10 }}>
                         Batch/Serial
                       </Text>
                     </Col>
-                    <Col span={8}>
+                    <Col span={6}>
                       <Text strong style={{ fontSize: 10 }}>
                         Expiry Date
                       </Text>
                     </Col>
-                    <Col span={4}>
+                    <Col span={3}>
+                      <Text strong style={{ fontSize: 10 }}>MRP</Text>
+                    </Col>
+                    <Col span={3}>
                       <Text strong style={{ fontSize: 10 }}>
                         Count Qty
                       </Text>
@@ -2279,66 +2863,93 @@ export default function YearEndPage() {
                     <Col span={2}></Col>
                   </Row>
 
-                  {countingUnits.map((u) => (
-                    <Row key={u.tempId} gutter={5} style={{ marginBottom: 10 }}>
-                      <Col span={10}>
-                        <AutoComplete
-                          style={{ width: "100%" }}
-                          options={getOptions("batch_no", u.batch_no, u.tempId)}
-                          value={u.batch_no}
-                          onChange={(v) => updateField(u.tempId, "batch_no", v)}
-                          disabled={u.isSystem}
-                        >
-                          {/* Removed prefix entirely for a cleaner greyscale look */}
-                          <Input
-                            placeholder="Enter ID..."
-                            style={{ textAlign: "left" }}
-                          />
-                        </AutoComplete>
-                      </Col>
-                      <Col span={8}>
-                        <DatePicker
-                          style={{ width: "100%" }}
-                          format="DD-MM-YYYY"
-                          suffixIcon={u.isSystem ? null : undefined}
-                          value={u.expiry_date ? dayjs(u.expiry_date) : null}
-                          onChange={(date) =>
-                            updateField(u.tempId, "expiry_date", date)
-                          }
-                          disabled={u.isSystem}
-                        />
-                      </Col>
-                      <Col span={4}>
-                        <InputNumber
-                          placeholder=""
-                          style={{ width: "100%" }}
-                          controls={false}
-                          value={
-                            u.quantity === 0 || u.quantity === null
-                              ? null
-                              : u.quantity
-                          }
-                          onChange={(v) => updateField(u.tempId, "quantity", v)}
-                        />
-                      </Col>
-                      <Col span={2}>
-                        {!u.isSystem && (
-                          <Button
-                            danger
-                            type="text"
-                            icon={<DeleteOutlined />}
-                            onClick={() =>
-                              setCountingUnits(
-                                countingUnits.filter(
-                                  (x) => x.tempId !== u.tempId,
-                                ),
-                              )
+                  {countingUnits
+                    .filter((u) => {
+                      // 1. Convert to Number to handle any string issues from the DB
+                      const isZero = Number(u.count_quantity) === 0;
+
+                      // 2. Check the status (ensure it matches your 'submitted' string exactly)
+                      const isSubmitted = u.status === 'submitted';
+
+                      // 3. Return FALSE only if BOTH are true (this "disables/hides" the row)
+                      return !(isZero && isSubmitted);
+                    })
+                    .map((u) => (
+
+                      <Row key={u.tempId} gutter={5} style={{ marginBottom: 10 }}>
+                        <Col span={8}>
+                          <AutoComplete
+                            style={{ width: "100%" }}
+                            options={getOptions(u.batch_no)}
+                            value={u.batch_no}
+                            onSelect={(val, option) => {
+                              updateField(u.tempId, "batch_no", val);
+
+                              // ✅ auto-fill expiry
+                              if (option?.expiry) {
+                                updateField(u.tempId, "expiry_date", dayjs(option.expiry));
+                              }
+                            }}
+                            onChange={(val) => updateField(u.tempId, "batch_no", val)}
+                            disabled={u.isSystem}
+                          >
+                            <Input placeholder="Select Batch..." />
+                          </AutoComplete>
+                        </Col>
+
+
+                        <Col span={6}>
+                          <DatePicker
+                            style={{ width: "100%" }}
+                            format="DD-MM-YYYY"
+                            suffixIcon={u.isSystem ? null : undefined}
+                            value={u.expiry_date ? dayjs(u.expiry_date) : null}
+                            onChange={(date) =>
+                              updateField(u.tempId, "expiry_date", date)
                             }
+                            disabled={u.isSystem}
                           />
-                        )}
-                      </Col>
-                    </Row>
-                  ))}
+                        </Col>
+                        <Col span={3}>
+                          <InputNumber
+                            placeholder="MRP"
+                            style={{ width: "100%" }}
+                            value={u.mrp}
+                            onChange={(v) => updateField(u.tempId, "mrp", v)}
+
+                          />
+                        </Col>
+                        <Col span={3}>
+                          <InputNumber
+                            placeholder=""
+                            style={{ width: "100%" }}
+                            controls={false}
+                            value={
+                              u.quantity === 0 || u.quantity === null
+                                ? null
+                                : u.quantity
+                            }
+                            onChange={(v) => updateField(u.tempId, "quantity", v)}
+                          />
+                        </Col>
+                        <Col span={2}>
+                          {!u.isSystem && (
+                            <Button
+                              danger
+                              type="text"
+                              icon={<DeleteOutlined />}
+                              onClick={() =>
+                                setCountingUnits(
+                                  countingUnits.filter(
+                                    (x) => x.tempId !== u.tempId,
+                                  ),
+                                )
+                              }
+                            />
+                          )}
+                        </Col>
+                      </Row>
+                    ))}
 
                   <Card
                     size="small"
@@ -2743,22 +3354,3 @@ export default function YearEndPage() {
     </div>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
