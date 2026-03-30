@@ -52,7 +52,7 @@ export default function AdminPage() {
       items: [
         { name: "Product Groups", key: "groups", icon: Folder },
         { name: "Import Stock Data", key: "stock", icon: Boxes,route: "/admin/importStock" },
-        { name: "Categories", key: "categories", icon: Layers },
+        { name: "Purchase Rate Correction", key: "pur-rate-corr", icon: Layers,route: "/admin/purchase-rate-correction" },
       ],
     },
     {

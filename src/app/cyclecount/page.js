@@ -42,8 +42,6 @@ export default function CycleDashboard() {
   const [supervisorVisible, setSupervisorVisible] = useState(false);
   const [selectedTeam, setSelectedTeam] = useState(null);
   const [loadingLogin, setLoadingLogin] = useState(false);
-  
-  
 
   const fetchCycles = async () => {
     console.log("🚀 Starting to fetch cycles...");
@@ -200,7 +198,6 @@ export default function CycleDashboard() {
             fontWeight: 700,
             fontSize: 16,
             boxShadow: "0 2px 6px rgba(22,119,255,0.3)",
-
           }}
         >
           {id}
@@ -228,6 +225,16 @@ export default function CycleDashboard() {
             }}
           >
             Open
+          </Button>
+
+          <Button
+            type="primary"
+            size="small"
+            onClick={() => {
+              router.push(`/admin/printcountpage/${r.id}`);
+            }}
+          >
+            Print
           </Button>
         </Space>
       ),
@@ -325,7 +332,6 @@ export default function CycleDashboard() {
 
       // 🔥 Create new session
       await createSession(selectedTeam);
-
     } catch (err) {
       message.error(err.message || "Something went wrong");
     } finally {
@@ -637,8 +643,9 @@ export default function CycleDashboard() {
                 return (
                   <div
                     key={team.id}
-                    className={`card ${position} ${team.isActive ? "disabled" : ""
-                      } ${selectedTeam?.id === team.id ? "active" : ""}`}
+                    className={`card ${position} ${
+                      team.isActive ? "disabled" : ""
+                    } ${selectedTeam?.id === team.id ? "active" : ""}`}
                     onClick={() => {
                       if (teamLoginVisible || position !== "center") return;
 
