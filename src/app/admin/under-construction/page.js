@@ -1,4 +1,7 @@
 "use client";
+
+export const dynamic = "force-dynamic"; // ✅ ADD THIS
+
 import { useSearchParams } from "next/navigation";
 
 export default function UnderConstruction() {
