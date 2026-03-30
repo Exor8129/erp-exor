@@ -1,16 +1,15 @@
 "use client";
-import { useSearchParams } from "next/navigation";
 
-export default function UnderConstruction() {
-  const params = useSearchParams();
-  const feature = params.get("feature");
+import { Suspense } from "react";
+import UnderConstructionContent from "./UnderConstructionContent";
 
+// ✅ FORCE dynamic rendering (VERY IMPORTANT)
+export const dynamic = "force-dynamic";
+
+export default function Page() {
   return (
-    <div style={{ padding: 40, textAlign: "center" }}>
-      <h1>🚧 Under Construction</h1>
-      <p>
-        {feature ? `${feature} will be available soon.` : "Coming soon."}
-      </p>
-    </div>
+    <Suspense fallback={<div style={{ padding: 40 }}>Loading...</div>}>
+      <UnderConstructionContent />
+    </Suspense>
   );
 }
