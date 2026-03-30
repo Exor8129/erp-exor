@@ -1,8 +1,8 @@
-export const dynamic = "force-dynamic";
-
 "use client";
 
-import { useState, useMemo } from "react";
+export const dynamic = "force-dynamic";
+
+import { useState, useMemo,useEffect } from "react";
 import {
   Card,
   Row,
@@ -32,7 +32,6 @@ import {
   CartesianGrid,
 } from "recharts";
 import { useSearchParams, useRouter } from "next/navigation";
-import { useEffect } from "react";
 import { supabase } from "../../lib/supabase"; // ✅ updated import
 
 const { Option } = Select;
