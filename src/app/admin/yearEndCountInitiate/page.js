@@ -190,7 +190,7 @@ const handleInitiate = async () => {
 
       <Alert
         type="warning"
-        message="Stock movement may be restricted after initiation."
+        title="Stock movement may be restricted after initiation."
         style={{ marginTop: 16 }}
       />
 
@@ -253,7 +253,7 @@ const handleInitiate = async () => {
               setForm({ ...form, scope: e.target.value })
             }
           >
-            <Space direction="vertical">
+            <Space orientation="vertical">
               <Radio value="all">All Products</Radio>
               <Radio value="warehouse">By Warehouse</Radio>
             </Space>

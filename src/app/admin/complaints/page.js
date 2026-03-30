@@ -337,15 +337,17 @@ export default function ComplaintStockPage() {
           <Col span={8}>
             <Text strong>Item</Text>
             <Select
-              showSearch
+              showSearch={{
+                optionFilterProp: "label",
+                filterOption: (input, option) =>
+                  (option?.label ?? "")
+                    .toLowerCase()
+                    .includes(input.toLowerCase()),
+              }}
               placeholder="Select Item"
               value={selectedItem}
               onChange={setSelectedItem}
               style={{ width: "100%", marginTop: 4 }}
-              optionFilterProp="label" // 🔥 KEY FIX
-              filterOption={(input, option) =>
-                option.label.toLowerCase().includes(input.toLowerCase())
-              }
               options={items.map((i) => ({
                 value: i.id,
                 label: i.item_name,
