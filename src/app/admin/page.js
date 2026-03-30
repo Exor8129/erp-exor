@@ -108,8 +108,7 @@ export default function AdminPage() {
                           router.push(item.route);
                         } else if (item.modal) {
                           setOpenModal(item.modal);
-                        } else {
-                          router.push(`/admin/under-construction?feature=${item.name}`); // 👈 fallback
+                        
                         }
                       }}
                       className="flex items-center gap-3 p-4 border rounded-lg hover:border-blue-500 hover:bg-blue-50 cursor-pointer transition"
