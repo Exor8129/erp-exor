@@ -183,7 +183,7 @@
 import React, { useEffect, useState } from "react";
 import { Table, Tag, Button, Space, message, Typography, Select, Card, Tabs } from "antd";
 import { CheckCircleOutlined, CloseCircleOutlined, EditOutlined } from "@ant-design/icons";
-import { supabase } from "../../lib/supabase";
+import { supabase } from "../../../src/app/lib/supabase";
 import { useRouter } from "next/navigation";
 
 const { Title } = Typography;
