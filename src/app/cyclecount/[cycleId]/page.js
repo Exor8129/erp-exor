@@ -1882,15 +1882,51 @@ export default function YearEndPage() {
 
 
 
+  // useEffect(() => {
+  //   if (!isLoggedIn || !cycleId) return;
+
+  //   const interval = setInterval(() => {
+  //     fetchInventory(); // 🔥 refresh data
+  //   }, 5000); // every 5 seconds
+
+  //   return () => clearInterval(interval);
+  // }, [isLoggedIn, cycleId]);
+
+
   useEffect(() => {
-    if (!isLoggedIn || !cycleId) return;
+  if (!isLoggedIn || !cycleId) return;
 
-    const interval = setInterval(() => {
-      fetchInventory(); // 🔥 refresh data
-    }, 5000); // every 5 seconds
+  const channel = supabase
+    .channel("cycle-items-realtime")
+    .on(
+      "postgres_changes",
+      {
+        event: "*", // INSERT, UPDATE, DELETE
+        schema: "public",
+        table: "cycle_items",
+        filter: `cycle_id=eq.${cycleId}`, // 🎯 IMPORTANT (only this cycle)
+      },
+      (payload) => {
+        console.log("🔄 Realtime change:", payload);
 
-    return () => clearInterval(interval);
-  }, [isLoggedIn, cycleId]);
+        // 🔥 IMPORTANT: Avoid interrupting user input
+        const isUserEditing = !!selectedProduct;
+
+        if (isUserEditing) {
+          console.log("⏸ Skipped refresh (user editing)");
+          return;
+        }
+
+        // ✅ Soft refresh
+        fetchInventory();
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}, [isLoggedIn, cycleId, selectedProduct]);
 
 
   useEffect(() => {
