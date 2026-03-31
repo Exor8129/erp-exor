@@ -1601,44 +1601,79 @@ const { Text, Title } = Typography;
 const thermalStyles = `
 @media print {
   body * { visibility: hidden; }
-  .thermal-slip, .thermal-slip * { visibility: visible; }
+
+  @page { 
+    size: 100mm 150mm; 
+    margin: 0; 
+  }
+
+  .thermal-slip, .thermal-slip * { 
+    visibility: visible; 
+  }
+
   .thermal-slip {
     position: absolute;
     left: 0;
     top: 0;
-    width: 80mm; 
-    padding: 2mm;
+    width: 100mm !important; 
+    height: 150mm;
+    box-sizing: border-box;
+    padding: 4mm; /* Giving a little edge room */
     background: #fff;
+    display: block !important;
   }
-  .no-print { display: none !important; }
+
+  /* --- THE FIX: FORCE GRID & TABLE TO SPREAD --- */
   
+  /* 1. Reset Ant Design Rows and Columns */
+  .thermal-slip .ant-row {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important; /* Prevents columns from jumping to next line */
+    width: 100% !important;
+    margin: 0 !important;
+  }
+
+  .thermal-slip .ant-col {
+    flex: 1 1 auto !important; /* Forces columns to grow to fill space */
+    padding: 0 2px !important;
+    max-width: none !important;
+  }
+
+  /* 2. Reset Tables to use the full 100mm */
+  .thermal-slip table, 
+  .thermal-slip .ant-table,
+  .thermal-slip .ant-table-container,
+  .thermal-slip .ant-table-content table {
+    width: 100% !important;
+    min-width: 100% !important;
+    table-layout: fixed !important; /* This is mandatory to prevent squashing */
+  }
+
+  /* 3. Force headers and cells to stay on one line or wrap neatly */
+  .thermal-slip th, 
+  .thermal-slip td {
+    padding: 2px !important;
+    font-size: 9pt !important; /* Slightly smaller to fit "Batch/Serial" */
+    word-break: break-word !important;
+    overflow: hidden;
+  }
+
+  /* 4. Fix Inputs that are shrinking */
   .thermal-slip .ant-input, 
-  .thermal-slip .ant-picker, 
   .thermal-slip .ant-input-number,
-  .thermal-slip .ant-input-number-input-wrap,
   .thermal-slip .ant-select-selector {
-    border: none !important;
-    box-shadow: none !important;
-    background: transparent !important;
-    padding: 0 !important;
+    width: 100% !important;
+    min-width: 0 !important; /* Allows them to shrink if the column is tight */
+    display: block !important;
   }
 
-  .thermal-slip .ant-input-number-handler-wrap {
-    display: none !important;
-  }
-
-  .thermal-slip .ant-input-disabled,
-  .thermal-slip .ant-picker-disabled,
-  .thermal-slip .ant-input-number-disabled,
-  .thermal-slip .ant-input-number-input {
-    color: #000 !important;
-    -webkit-text-fill-color: #000 !important;
-    opacity: 1 !important;
-  }
-
-  @page { margin: 0; size: auto; }
+  .no-print { display: none !important; }
 }
 `;
+
+
+
 
 export default function YearEndPage() {
   const params = useParams();
@@ -2527,9 +2562,137 @@ const fetchSavedAllocations = async (product) => {
 
   setSavedAllocations(data || []);
 };
+
+/////////////////////////////////////////////////////////////
+///////////////CODE FOR PRINTING SLIP (STARTS) //////////////
+/////////////////////////////////////////////////////////////
+
+const handlePrint = () => {
+  
+  if (!selectedProduct || countingUnits.length === 0) {
+    message.warning("No data to print");
+    return;
+  }
+
+  console.log("PRINT DATA:", selectedProduct, countingUnits);
+
+  const printWindow = window.open("", "_blank");
+
+const rows = countingUnits
+  .map((u, i) => {
+    const batch = u.batch_no || "-";
+    const expiry = u.expiry_date
+      ? dayjs(u.expiry_date).format("DD-MM-YYYY")
+      : "-";
+    const mrp = u.mrp ?? "-";
+    const qty = u.quantity ?? "-";
+
+    return `
+      <tr>
+        <td>${i + 1}</td>
+        <td>${batch}</td>
+        <td>${expiry}</td>
+        <td>${mrp}</td>
+        <td>${qty}</td>
+      </tr>
+    `;
+  })
+  .join("");
+
+ const html = `
+<html>
+<head>
+<style>
+  @page { size: A6; margin: 0; }
+
+  body {
+    font-family: Arial;
+    margin: 0;
+  }
+
+  .page {
+    padding: 5mm;
+  }
+
+  .header {
+    margin-bottom: 6px;
+    font-size: 11pt;
+  }
+
+  .table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 9pt;
+  }
+
+  .table th,
+  .table td {
+    border: .1px solid #808080;
+    padding: 3px;
+    text-align: left;
+  }
+
+  .table th {
+    background: #f0f0f0;
+  }
+
+</style>
+</head>
+
+<body>
+  <div class="page">
+
+    <div class="header">
+      <div><b>SL No:</b> ${selectedProduct.sl_no}</div>
+      <div><b>Item:</b> ${selectedProduct.item_name}</div>
+    </div>
+
+    <table class="table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Batch</th>
+          <th>Expiry</th>
+          <th>MRP</th>
+          <th>Qty</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        ${rows}
+      </tbody>
+    </table>
+
+  </div>
+</body>
+</html>
+`;
+
+  printWindow.document.write(html);
+  printWindow.document.close();
+
+  setTimeout(() => {
+    printWindow.print();
+    printWindow.close();
+  }, 500);
+};
+
+
+
+
+/////////////////////////////////////////////////////////////
+///////////////CODE FOR PRINTING SLIP (ENDS) ////////////////
+/////////////////////////////////////////////////////////////
+
+
+
+
   ////////////////////////////////////////////////////////////
   ////////////NEW CODES AFTER DEPLOYMENT (ENDS) ////////////
   ////////////////////////////////////////////////////////////
+
+
+
 
   return (
     <div
@@ -2813,7 +2976,7 @@ const fetchSavedAllocations = async (product) => {
                     <div className="no-print">
                       <Button
                         icon={<PrinterOutlined />}
-                        onClick={() => window.print()}
+                        onClick={handlePrint}
                         style={{ marginRight: 8 }}
                       >
                         Print Slip
@@ -2940,28 +3103,28 @@ const fetchSavedAllocations = async (product) => {
 
                   {/* HEADER FOR NEW ENTRIES */}
                   <Row
-                    gutter={5}
+                    gutter={0}
                     style={{
                       marginBottom: 5,
                       borderBottom: "1px solid #f0f0f0",
                     }}
                   >
-                    <Col span={8}>
+                    <Col span={9}>
                       <Text strong style={{ fontSize: 10 }}>
                         Batch/Serial
                       </Text>
                     </Col>
-                    <Col span={6}>
+                    <Col span={7}>
                       <Text strong style={{ fontSize: 10 }}>
                         Expiry Date
                       </Text>
                     </Col>
-                    <Col span={3}>
+                    <Col span={4}>
                       <Text strong style={{ fontSize: 10 }}>
                         MRP
                       </Text>
                     </Col>
-                    <Col span={3}>
+                    <Col span={4}>
                       <Text strong style={{ fontSize: 10 }}>
                         Count Qty
                       </Text>
