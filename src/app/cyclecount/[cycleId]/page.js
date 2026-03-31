@@ -1,6 +1,3 @@
-
-
-
 // "use client";
 
 // import { useState, useEffect, useMemo } from "react";
@@ -38,9 +35,6 @@
 // const { Text, Title } = Typography;
 // // const { TabPane } = Tabs;
 
-
-
-
 // const thermalStyles = `
 // @media print {
 //   body * { visibility: hidden; }
@@ -49,14 +43,14 @@
 //     position: absolute;
 //     left: 0;
 //     top: 0;
-//     width: 80mm; 
+//     width: 80mm;
 //     padding: 2mm;
 //     background: #fff;
 //   }
 //   .no-print { display: none !important; }
 
-//   .thermal-slip .ant-input, 
-//   .thermal-slip .ant-picker, 
+//   .thermal-slip .ant-input,
+//   .thermal-slip .ant-picker,
 //   .thermal-slip .ant-input-number,
 //   .thermal-slip .ant-input-number-input-wrap,
 //   .thermal-slip .ant-select-selector {
@@ -89,7 +83,6 @@
 //   const searchParams = useSearchParams();
 //   const teamId = searchParams.get("teamId");
 
-
 //   const [mounted, setMounted] = useState(false);
 //   const [isLoggedIn, setIsLoggedIn] = useState(false);
 //   const [team, setTeam] = useState(null);
@@ -109,8 +102,6 @@
 //   const [assistants, setAssistants] = useState([]);
 //   const [lastStopTime, setLastStopTime] = useState(null);
 
-
-
 //   const tabLabel = (text, count) => (
 //     <div style={{ display: "flex", gap: 6 }}>
 //       <span>{text}</span>
@@ -128,7 +119,6 @@
 //     (b) => b.batch_no === selectedBatch?.batch_no,
 //   );
 
-
 //   const fetchLoggedInTeam = async () => {
 //     try {
 //       if (!teamId) {
@@ -136,9 +126,6 @@
 //         window.location.href = "/";
 //         return;
 //       }
-
-
-
 
 //       const { data, error } = await supabase
 //         .from("counting_sessions")
@@ -152,7 +139,7 @@
 //           id,
 //           username,
 //           team_leader,
-//           assistants  
+//           assistants
 //         )
 //       `)
 //         .eq("cycle_id", Number(cycleId))
@@ -176,8 +163,6 @@
 //       setSession(row);
 //       setIsLoggedIn(true);
 
-
-
 //       const { data: lastSession } = await supabase
 //         .from("counting_sessions")
 //         .select("sessions_stop")
@@ -189,8 +174,6 @@
 //         .maybeSingle();
 
 //       setLastStopTime(lastSession?.sessions_stop || null);
-
-
 
 //       // ✅ NEW: Parse assistants safely
 //       try {
@@ -208,8 +191,6 @@
 //       console.log("❌ MESSAGE:", err?.message);
 //     }
 //   };
-
-
 
 //   const handleLogout = async () => {
 //     try {
@@ -237,21 +218,10 @@
 //     }
 //   };
 
-
-
-
-
-
-
 //   useEffect(() => {
 //     setMounted(true);
 //     fetchLoggedInTeam(); // ✅ ALWAYS check session from DB
 //   }, [cycleId]);
-
-
-
-
-
 
 //   useEffect(() => {
 //     setSelectedWarehouse(null);
@@ -262,8 +232,6 @@
 //       fetchInventory();
 //     }
 //   }, [isLoggedIn, cycleId]);
-
-
 
 //   useEffect(() => {
 //     if (!selectedProduct) return;
@@ -379,8 +347,6 @@
 //         }
 
 //         acc[itemId].systemUnits.push(curr);
-
-
 
 //         if (curr.status === "pending") {
 //           acc[itemId].status = "pending";
@@ -519,10 +485,6 @@
 //     }
 //   };
 
-
-
-
-
 //   const tabCounts = useMemo(() => {
 //     return {
 //       all: products.length,
@@ -548,12 +510,6 @@
 //       ).length,
 //     };
 //   }, [products]);
-
-
-
-
-
-
 
 //   const filteredItems = useMemo(() => {
 //     let data;
@@ -595,11 +551,6 @@
 //       p.item_name?.toLowerCase().includes(searchText.toLowerCase())
 //     );
 //   }, [products, activeTab, searchText]);
-
-
-
-
-
 
 //   const getOptions = (value) => {
 //     if (!selectedProduct) return [];
@@ -762,7 +713,6 @@
 // }
 // `;
 
-
 //   if (!mounted || !isLoggedIn) {
 //     return null;
 //   }
@@ -838,7 +788,6 @@
 //                   </Text>
 //                 </div> */}
 
-
 //                 <Button
 //                   danger
 //                   size="small"
@@ -867,9 +816,6 @@
 //                   setActiveTab(key);
 //                   setSelectedProduct(null); // 👈 Reset selection when tab changes
 //                 }}
-
-
-
 
 //                 items={[
 //                   {
@@ -1157,7 +1103,6 @@
 //                             <Input placeholder="Select Batch..." />
 //                           </AutoComplete>
 //                         </Col>
-
 
 //                         <Col span={6}>
 //                           <DatePicker
@@ -1616,13 +1561,6 @@
 //   );
 // }
 
-
-
-
-
-
-
-
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -1659,9 +1597,6 @@ import { useSearchParams } from "next/navigation";
 
 const { Text, Title } = Typography;
 // const { TabPane } = Tabs;
-
-
-
 
 const thermalStyles = `
 @media print {
@@ -1711,7 +1646,6 @@ export default function YearEndPage() {
   const searchParams = useSearchParams();
   const teamId = searchParams.get("teamId");
 
-
   const [mounted, setMounted] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [team, setTeam] = useState(null);
@@ -1730,8 +1664,10 @@ export default function YearEndPage() {
   const [searchText, setSearchText] = useState("");
   const [assistants, setAssistants] = useState([]);
   const [lastStopTime, setLastStopTime] = useState(null);
-
-
+  const [warehouses, setWarehouses] = useState([]);
+  const [racks, setRacks] = useState([]);
+  const [finalSubmitted, setFinalSubmitted] = useState(false);
+  const [savedAllocations, setSavedAllocations] = useState([]);
 
   const tabLabel = (text, count) => (
     <div style={{ display: "flex", gap: 6 }}>
@@ -1739,8 +1675,6 @@ export default function YearEndPage() {
       <span style={{ fontWeight: 500 }}>{count}</span>
     </div>
   );
-
-
 
   const unlockProduct = async (product) => {
     if (!product) return;
@@ -1754,8 +1688,6 @@ export default function YearEndPage() {
       .eq("item_id", product.id);
   };
 
-
-
   const [allocationForm, setAllocationForm] = useState({
     rack: null,
     compartment: null,
@@ -1766,7 +1698,6 @@ export default function YearEndPage() {
     (b) => b.batch_no === selectedBatch?.batch_no,
   );
 
-
   const fetchLoggedInTeam = async () => {
     try {
       if (!teamId) {
@@ -1775,12 +1706,10 @@ export default function YearEndPage() {
         return;
       }
 
-
-
-
       const { data, error } = await supabase
         .from("counting_sessions")
-        .select(`
+        .select(
+          `
         id,
         sessions_start,
         sessions_stop,
@@ -1792,7 +1721,8 @@ export default function YearEndPage() {
           team_leader,
           assistants  
         )
-      `)
+      `,
+        )
         .eq("cycle_id", Number(cycleId))
         .eq("team_id", Number(teamId))
         .is("sessions_stop", null)
@@ -1814,8 +1744,6 @@ export default function YearEndPage() {
       setSession(row);
       setIsLoggedIn(true);
 
-
-
       const { data: lastSession } = await supabase
         .from("counting_sessions")
         .select("sessions_stop")
@@ -1828,26 +1756,19 @@ export default function YearEndPage() {
 
       setLastStopTime(lastSession?.sessions_stop || null);
 
-
-
       // ✅ NEW: Parse assistants safely
       try {
-        const parsedAssistants = JSON.parse(
-          row.teams?.assisatants || "[]"
-        );
+        const parsedAssistants = JSON.parse(row.teams?.assisatants || "[]");
         setAssistants(row.teams?.assistants || []);
       } catch (e) {
         console.error("Assistant parse error:", e);
         setAssistants([]);
       }
-
     } catch (err) {
       console.log("ERROR:", err);
       console.log("❌ MESSAGE:", err?.message);
     }
   };
-
-
 
   const handleLogout = async () => {
     try {
@@ -1880,8 +1801,6 @@ export default function YearEndPage() {
     }
   };
 
-
-
   // useEffect(() => {
   //   if (!isLoggedIn || !cycleId) return;
 
@@ -1892,49 +1811,45 @@ export default function YearEndPage() {
   //   return () => clearInterval(interval);
   // }, [isLoggedIn, cycleId]);
 
-
   useEffect(() => {
-  if (!isLoggedIn || !cycleId) return;
+    if (!isLoggedIn || !cycleId) return;
 
-  const channel = supabase
-    .channel("cycle-items-realtime")
-    .on(
-      "postgres_changes",
-      {
-        event: "*", // INSERT, UPDATE, DELETE
-        schema: "public",
-        table: "cycle_items",
-        filter: `cycle_id=eq.${cycleId}`, // 🎯 IMPORTANT (only this cycle)
-      },
-      (payload) => {
-        console.log("🔄 Realtime change:", payload);
+    const channel = supabase
+      .channel("cycle-items-realtime")
+      .on(
+        "postgres_changes",
+        {
+          event: "*", // INSERT, UPDATE, DELETE
+          schema: "public",
+          table: "cycle_items",
+          filter: `cycle_id=eq.${cycleId}`, // 🎯 IMPORTANT (only this cycle)
+        },
+        (payload) => {
+          console.log("🔄 Realtime change:", payload);
 
-        // 🔥 IMPORTANT: Avoid interrupting user input
-        const isUserEditing = !!selectedProduct;
+          // 🔥 IMPORTANT: Avoid interrupting user input
+          const isUserEditing = !!selectedProduct;
 
-        if (isUserEditing) {
-          console.log("⏸ Skipped refresh (user editing)");
-          return;
-        }
+          if (isUserEditing) {
+            console.log("⏸ Skipped refresh (user editing)");
+            return;
+          }
 
-        // ✅ Soft refresh
-        fetchInventory();
-      }
-    )
-    .subscribe();
+          // ✅ Soft refresh
+          fetchInventory();
+        },
+      )
+      .subscribe();
 
-  return () => {
-    supabase.removeChannel(channel);
-  };
-}, [isLoggedIn, cycleId, selectedProduct]);
-
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [isLoggedIn, cycleId, selectedProduct]);
 
   useEffect(() => {
     setMounted(true);
     fetchLoggedInTeam(); // ✅ ALWAYS check session from DB
   }, [cycleId]);
-
-
 
   useEffect(() => {
     const handleUnload = () => {
@@ -1950,7 +1865,6 @@ export default function YearEndPage() {
     };
   }, [selectedProduct]);
 
-
   useEffect(() => {
     setSelectedWarehouse(null);
   }, [selectedProduct]);
@@ -1958,10 +1872,9 @@ export default function YearEndPage() {
   useEffect(() => {
     if (isLoggedIn && cycleId) {
       fetchInventory();
+      fetchWarehouses();
     }
   }, [isLoggedIn, cycleId]);
-
-
 
   useEffect(() => {
     if (!selectedProduct) return;
@@ -1969,11 +1882,14 @@ export default function YearEndPage() {
     const relevantUnits = (selectedProduct.systemUnits || []).filter(
       (u) =>
         Number(u.sys_quantity || 0) > 0 &&
-        (u.status !== "submitted" || Number(u.count_quantity || 0) > 0)
+        (u.status !== "submitted" || Number(u.count_quantity || 0) > 0),
     );
 
     const pendingUnits = relevantUnits.filter(
-      (u) => u.status === "pending" || u.status === "editable" || u.status === "recount"
+      (u) =>
+        u.status === "pending" ||
+        u.status === "editable" ||
+        u.status === "recount",
     );
 
     if (pendingUnits.length === 0) {
@@ -1986,21 +1902,17 @@ export default function YearEndPage() {
         tempId: `system-${index}`,
         id: unit.id,
         batch_no: unit.count_batch_no || unit.sys_batch_no || "",
-        expiry_date:
-          unit.count_expiry_date || unit.sys_expiry_date || null,
+        expiry_date: unit.count_expiry_date || unit.sys_expiry_date || null,
 
         quantity:
-          activeTab === "editable"
-            ? Number(unit.count_quantity ?? 0)
-            : null,
+          activeTab === "editable" ? Number(unit.count_quantity ?? 0) : null,
 
         mrp: unit.mrp || null,
 
         isSystem: true,
         status: unit.status,
-      }))
+      })),
     );
-
   }, [selectedProduct, activeTab]); // ✅ ALWAYS SAME LENGTH
 
   const totals = useMemo(() => {
@@ -2047,7 +1959,8 @@ export default function YearEndPage() {
             
           )
         `,
-          ).eq("cycle_id", Number(cycleId))
+          )
+          .eq("cycle_id", Number(cycleId))
           .range(from, from + limit - 1);
 
         if (error) throw error;
@@ -2061,8 +1974,6 @@ export default function YearEndPage() {
       }
 
       console.log("✅ Total fetched rows:", allData.length);
-
-      
 
       // ✅ GROUPING LOGIC (same as your existing)
       const grouped = allData.reduce((acc, curr) => {
@@ -2079,8 +1990,6 @@ export default function YearEndPage() {
         }
 
         acc[itemId].systemUnits.push(curr);
-
-
 
         if (curr.status === "pending") {
           acc[itemId].status = "pending";
@@ -2121,7 +2030,7 @@ export default function YearEndPage() {
       const processedUnits = countingUnits.map((u) => {
         if (u.isSystem) {
           const original = selectedProduct.systemUnits.find(
-            (s) => s.id === u.id
+            (s) => s.id === u.id,
           );
 
           const sysQty = Number(original?.sys_quantity || 0);
@@ -2160,10 +2069,7 @@ export default function YearEndPage() {
         console.log("📦 PAYLOAD:", payload);
 
         if (unit.isSystem) {
-          await supabase
-            .from("cycle_items")
-            .update(payload)
-            .eq("id", unit.id);
+          await supabase.from("cycle_items").update(payload).eq("id", unit.id);
         } else {
           await supabase.from("cycle_items").insert([
             {
@@ -2179,9 +2085,7 @@ export default function YearEndPage() {
 
       // 🔥 ZERO SYSTEM BATCH FIX ALSO NEEDS TEAM + SL
       const zeroSystemBatches = selectedProduct.systemUnits.filter(
-        (u) =>
-          Number(u.sys_quantity || 0) === 0 &&
-          u.status !== "submitted"
+        (u) => Number(u.sys_quantity || 0) === 0 && u.status !== "submitted",
       );
 
       console.log("ZERO BATCHES:", zeroSystemBatches);
@@ -2219,73 +2123,58 @@ export default function YearEndPage() {
     }
   };
 
-
-
-
-
   const tabCounts = useMemo(() => {
     return {
       all: products.length,
 
       pending: products.filter((p) =>
-        p.systemUnits.some((u) => u.status === "pending")
+        p.systemUnits.some((u) => u.status === "pending"),
       ).length,
 
       submitted: products.filter((p) =>
-        p.systemUnits.every((u) => u.status === "submitted")
+        p.systemUnits.every((u) => u.status === "submitted"),
       ).length,
 
       editable: products.filter((p) =>
-        p.systemUnits.some((u) => u.status === "editable")
+        p.systemUnits.some((u) => u.status === "editable"),
       ).length,
 
       recount: products.filter((p) =>
         p.systemUnits.some(
           (u) =>
             u.status === "recount" &&
-            Number(u.count_quantity || 0) !== Number(u.sys_quantity || 0)
-        )
+            Number(u.count_quantity || 0) !== Number(u.sys_quantity || 0),
+        ),
       ).length,
     };
   }, [products]);
-
-
-
-
-
-
 
   const filteredItems = useMemo(() => {
     let data;
 
     if (activeTab === "all") {
       data = products;
-    }
-    else if (activeTab === "pending") {
+    } else if (activeTab === "pending") {
       data = products.filter((p) =>
-        p.systemUnits.some((u) => u.status === "pending")
+        p.systemUnits.some((u) => u.status === "pending"),
       );
-    }
-    else if (activeTab === "submitted") {
+    } else if (activeTab === "submitted") {
       data = products.filter((p) =>
-        p.systemUnits.every((u) => u.status === "submitted")
+        p.systemUnits.every((u) => u.status === "submitted"),
       );
-    }
-    else if (activeTab === "editable") {
+    } else if (activeTab === "editable") {
       data = products.filter((p) =>
-        p.systemUnits.some((u) => u.status === "editable")
+        p.systemUnits.some((u) => u.status === "editable"),
       );
-    }
-    else if (activeTab === "recount") {
+    } else if (activeTab === "recount") {
       data = products.filter((p) =>
         p.systemUnits.some(
           (u) =>
             u.status === "recount" &&
-            Number(u.count_quantity || 0) !== Number(u.sys_quantity || 0)
-        )
+            Number(u.count_quantity || 0) !== Number(u.sys_quantity || 0),
+        ),
       );
-    }
-    else {
+    } else {
       data = [];
     }
 
@@ -2300,11 +2189,6 @@ export default function YearEndPage() {
       );
     });
   }, [products, activeTab, searchText]);
-
-
-
-
-
 
   const getOptions = (value) => {
     if (!selectedProduct) return [];
@@ -2323,8 +2207,9 @@ export default function YearEndPage() {
     });
 
     return Array.from(unique.entries())
-      .filter(([batch]) =>
-        !value || batch.toLowerCase().includes(value.toLowerCase())
+      .filter(
+        ([batch]) =>
+          !value || batch.toLowerCase().includes(value.toLowerCase()),
       )
       .map(([batch, expiry]) => ({
         value: batch,
@@ -2340,37 +2225,38 @@ export default function YearEndPage() {
       }));
   };
 
-  const loadWarehouseBatches = async (warehouseId) => {
-    // You should fetch this from DB later
-    // For now simulate from submitted counts
-    console.log("🔥 loadWarehouseBatches called", warehouseId);
+  // const loadWarehouseBatches = async (warehouseId) => {
+  //   // You should fetch this from DB later
+  //   // For now simulate from submitted counts
+  //   console.log("🔥 loadWarehouseBatches called", warehouseId);
 
-    const grouped = {};
+  //   const grouped = {};
 
-    selectedProduct.systemUnits
-      .filter((u) => u.status === "submitted")
-      .forEach((u) => {
-        const qty = Number(u.count_quantity) || 0;
-        if (qty === 0) return; // 🚀 skip zero qty
+  //   selectedProduct.systemUnits
+  //     .filter((u) => u.status === "submitted")
+  //     .forEach((u) => {
+  //       const qty = Number(u.count_quantity) || 0;
+  //       if (qty === 0) return; // 🚀 skip zero qty
 
-        const batch = u.count_batch_no || "N/A";
+  //       const batch = u.count_batch_no || "N/A";
 
-        if (!grouped[batch]) grouped[batch] = 0;
-        grouped[batch] += qty;
-      });
+  //       if (!grouped[batch]) grouped[batch] = 0;
+  //       grouped[batch] += qty;
+  //     });
 
-    const formatted = Object.entries(grouped).map(([batch, qty]) => ({
-      batch_no: batch,
-      available_qty: qty,
-      allocations: [{ rack: "", compartment: "", qty: null }],
-    }))
-      .filter((b) => b.available_qty > 0); // 🚀 EXTRA SAFETY
+  //   const formatted = Object.entries(grouped)
+  //     .map(([batch, qty]) => ({
+  //       batch_no: batch,
+  //       available_qty: qty,
+  //       allocations: [{ rack: "", compartment: "", qty: null }],
+  //     }))
+  //     .filter((b) => b.available_qty > 0); // 🚀 EXTRA SAFETY
 
-    console.log("Grouped batches:", grouped);
-    console.log("Formatted batches:", formatted);
+  //   console.log("Grouped batches:", grouped);
+  //   console.log("Formatted batches:", formatted);
 
-    setWarehouseBatches(formatted);
-  };
+  //   setWarehouseBatches(formatted);
+  // };
 
   const compartments = ["C1", "C2", "C3", "C4", "C5", "C6"];
 
@@ -2400,8 +2286,8 @@ export default function YearEndPage() {
 
     const { rack, compartment, qty } = allocationForm;
 
-    if (!rack || !compartment || !qty) {
-      message.error("Rack, Compartment and Qty required");
+    if (!rack || !qty) {
+      message.error("Rack and Qty required");
       return;
     }
 
@@ -2427,7 +2313,7 @@ export default function YearEndPage() {
           // Mark as finished if remaining will be 0
           finished:
             Number(b.available_qty) -
-            ((b.allocations?.reduce((s, a) => s + a.qty, 0) || 0) + qty) ===
+              ((b.allocations?.reduce((s, a) => s + a.qty, 0) || 0) + qty) ===
             0,
         };
       }),
@@ -2443,7 +2329,7 @@ export default function YearEndPage() {
 
   const filteredAllocations = (allAllocations || []).filter(
     // (a) => a && a.batch_no && a.qty,
-    (a) => a && a.batch_no && a.qty && Number(a.qty) > 0
+    (a) => a && a.batch_no && a.qty && Number(a.qty) > 0,
   );
   const allFinished = useMemo(() => {
     return (
@@ -2474,10 +2360,176 @@ export default function YearEndPage() {
 }
 `;
 
-
   if (!mounted || !isLoggedIn) {
     return null;
   }
+
+  ////////////////////////////////////////////////////////////
+  ////////////NEW CODES AFTER DEPLOYMENT (STARTS) ////////////
+  ////////////////////////////////////////////////////////////
+
+  const fetchWarehouses = async () => {
+    const { data, error } = await supabase
+      .from("warehouses")
+      .select("*")
+      .order("name");
+
+    if (!error) {
+      setWarehouses(data || []);
+    }
+  };
+
+  const fetchRacks = async (warehouseId) => {
+    if (!warehouseId) return;
+
+    const { data, error } = await supabase
+      .from("temp_racks_names")
+      .select("id, racks")
+      .eq("warehouse_id", warehouseId)
+      .order("racks");
+
+    if (!error) setRacks(data || []);
+  };
+
+const handleFinalSubmit = async () => {
+  if (finalSubmitted) return;
+  setFinalSubmitted(true);
+
+  try {
+    if (!allFinished) {
+      message.error("All batches must be fully allocated");
+      setFinalSubmitted(false);
+      return;
+    }
+
+    const inserts = [];
+
+    warehouseBatches.forEach((batch) => {
+      batch.allocations?.forEach((a) => {
+        inserts.push({
+          batch_no: batch.batch_no,
+          rack: a.rack,
+          qty: a.qty,
+          item_id: selectedProduct.id,
+          cycle_id: selectedProduct.cycle_id,
+        });
+      });
+    });
+
+    if (inserts.length === 0) {
+      message.warning("No allocations to save");
+      setFinalSubmitted(false);
+      return;
+    }
+
+    const { error } = await supabase
+      .from("cycle_allocations")
+      .insert(inserts);
+
+    if (error) throw error;
+
+    message.success("Final Allocation Saved ✅");
+
+    // ✅🔥 THIS IS WHAT YOU MISSED
+    await fetchSavedAllocations(selectedProduct);
+
+    // ✅ refresh pending
+    await loadWarehouseBatches(selectedWarehouse);
+
+    setFinalSubmitted(false);
+
+  } catch (err) {
+    console.error(err);
+    message.error("Error saving allocation");
+    setFinalSubmitted(false);
+  }
+};
+
+
+
+
+
+ const loadWarehouseBatches = async (warehouseId) => {
+  console.log("🔥 loadWarehouseBatches called", warehouseId);
+
+  try {
+    if (!selectedProduct) return;
+
+    // ✅ FETCH allocations using item_id + cycle_id
+    const { data: allocations, error } = await supabase
+      .from("cycle_allocations")
+      .select("id, batch_no, qty")
+      .eq("item_id", selectedProduct.id)
+      .eq("cycle_id", selectedProduct.cycle_id);
+
+    if (error) {
+      console.error(error);
+      message.error("Failed to load allocations");
+      return;
+    }
+
+    // ✅ Build allocated map
+    const allocatedMap = {};
+    allocations.forEach((a) => {
+      const batch = a.batch_no || "N/A";
+      if (!allocatedMap[batch]) allocatedMap[batch] = 0;
+      allocatedMap[batch] += Number(a.qty || 0);
+    });
+
+    // ✅ Build grouped counts
+    const grouped = {};
+    selectedProduct.systemUnits
+      .filter((u) => u.status === "submitted")
+      .forEach((u) => {
+        const qty = Number(u.count_quantity) || 0;
+        if (!qty) return;
+
+        const batch = u.count_batch_no || "N/A";
+
+        if (!grouped[batch]) grouped[batch] = 0;
+        grouped[batch] += qty;
+      });
+
+    // ✅ Final batches
+    const formatted = Object.entries(grouped)
+      .map(([batch, totalQty]) => {
+        const allocatedQty = allocatedMap[batch] || 0;
+
+        return {
+          batch_no: batch,
+          available_qty: totalQty - allocatedQty,
+          allocations: [],
+        };
+      })
+      .filter((b) => b.available_qty > 0);
+
+    setWarehouseBatches(formatted);
+  } catch (err) {
+    console.error(err);
+    message.error("Error loading warehouse batches");
+  }
+};
+
+const fetchSavedAllocations = async (product) => {
+  if (!product) return;
+
+  const { data, error } = await supabase
+    .from("cycle_allocations")
+    .select("*")
+    .eq("item_id", product.id)
+    .eq("cycle_id", product.cycle_id);
+
+  if (error) {
+    console.error(error);
+    message.error("Failed to load allocations");
+    return;
+  }
+
+  setSavedAllocations(data || []);
+};
+  ////////////////////////////////////////////////////////////
+  ////////////NEW CODES AFTER DEPLOYMENT (ENDS) ////////////
+  ////////////////////////////////////////////////////////////
 
   return (
     <div
@@ -2491,15 +2543,17 @@ export default function YearEndPage() {
       <style>{modernStyles}</style>
       {isLoggedIn && (
         <Card
-
           variant={false}
           style={{
             borderRadius: 12,
             boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
           }}
         >
-          <Row justify="space-between" align="middle" style={{ marginBottom: 10 }}>
-
+          <Row
+            justify="space-between"
+            align="middle"
+            style={{ marginBottom: 10 }}
+          >
             {/* LEFT SIDE */}
             <div>
               <Title level={5} style={{ margin: 0 }}>
@@ -2513,25 +2567,15 @@ export default function YearEndPage() {
             {/* RIGHT SIDE (🔥 THIS IS WHAT YOU WANT) */}
             {team && session && (
               <div style={{ textAlign: "right" }}>
-
-
-
-   
                 <div>
-                  <Tag color="blue">
-                    ⭐ {team.username}
-                  </Tag>
+                  <Tag color="blue">⭐ {team.username}</Tag>
 
                   <div>
-
-                                 {team.team_leader && (
-                  <div style={{ marginBottom: 4 }}>
-                    <Tag color="gold">
-                      👤 Leader: {team.team_leader}
-                    </Tag>
-                  </div>
-                )}
-
+                    {team.team_leader && (
+                      <div style={{ marginBottom: 4 }}>
+                        <Tag color="gold">👤 Leader: {team.team_leader}</Tag>
+                      </div>
+                    )}
                   </div>
 
                   {/* ✅ Assistants */}
@@ -2548,7 +2592,8 @@ export default function YearEndPage() {
 
                 <div style={{ fontSize: 11, marginTop: 4 }}>
                   <Text type="secondary">
-                    🟢 Started: {dayjs(session.sessions_start).format("DD-MM-YY hh:mm")}
+                    🟢 Started:{" "}
+                    {dayjs(session.sessions_start).format("DD-MM-YY hh:mm")}
                   </Text>
                 </div>
 
@@ -2560,7 +2605,6 @@ export default function YearEndPage() {
                       : "No previous session"}
                   </Text>
                 </div> */}
-
 
                 <Button
                   danger
@@ -2590,53 +2634,74 @@ export default function YearEndPage() {
                   setActiveTab(key);
                   setSelectedProduct(null); // 👈 Reset selection when tab changes
                 }}
-
-
-
-
                 items={[
                   {
                     key: "all",
                     label: (
-                      <span> All{" "}
-                        <Badge count={tabCounts.all} color="blue" overflowCount={999999}>
-                        </Badge>
+                      <span>
+                        {" "}
+                        All{" "}
+                        <Badge
+                          count={tabCounts.all}
+                          color="blue"
+                          overflowCount={999999}
+                        ></Badge>
                       </span>
                     ),
                   },
                   {
                     key: "pending",
                     label: (
-                      <span> Pending{" "}
-                        <Badge count={tabCounts.pending} color="orange" overflowCount={999999}>
-                        </Badge>
+                      <span>
+                        {" "}
+                        Pending{" "}
+                        <Badge
+                          count={tabCounts.pending}
+                          color="orange"
+                          overflowCount={999999}
+                        ></Badge>
                       </span>
                     ),
                   },
                   {
                     key: "submitted",
                     label: (
-                      <span> Submitted{" "}
-                        <Badge count={tabCounts.submitted} color="green" overflowCount={999999}>
-                        </Badge>
+                      <span>
+                        {" "}
+                        Submitted{" "}
+                        <Badge
+                          count={tabCounts.submitted}
+                          color="green"
+                          overflowCount={999999}
+                        ></Badge>
                       </span>
                     ),
                   },
                   {
                     key: "recount",
                     label: (
-                      <span> Recount{" "}
-                        <Badge count={tabCounts.recount} color="purple" overflowCount={999999}>
-                        </Badge>
+                      <span>
+                        {" "}
+                        Recount{" "}
+                        <Badge
+                          count={tabCounts.recount}
+                          color="purple"
+                          overflowCount={999999}
+                        ></Badge>
                       </span>
                     ),
                   },
                   {
                     key: "editable",
                     label: (
-                      <span> Editable{" "}
-                        <Badge count={tabCounts.editable} color="yellow" overflowCount={999999}>
-                        </Badge>
+                      <span>
+                        {" "}
+                        Editable{" "}
+                        <Badge
+                          count={tabCounts.editable}
+                          color="yellow"
+                          overflowCount={999999}
+                        ></Badge>
                       </span>
                     ),
                   },
@@ -2655,13 +2720,9 @@ export default function YearEndPage() {
 
                   return "modern-row";
                 }}
-
-
-
                 onRow={(r) => ({
                   onClick: async () => {
                     try {
-                      // ✅ 1. Unlock previous product
                       if (selectedProduct?.id) {
                         await unlockProduct(selectedProduct);
                       }
@@ -2669,18 +2730,18 @@ export default function YearEndPage() {
                       const lockedBy = r.systemUnits?.[0]?.locked_by;
                       const lockedAt = r.systemUnits?.[0]?.locked_at;
 
-                      // ✅ 2. Check if locked by another user (with timeout 10 mins)
                       const isLocked =
                         lockedBy &&
                         lockedBy !== Number(teamId) &&
                         dayjs().diff(dayjs(lockedAt), "minute") < 10;
 
                       if (isLocked) {
-                        message.warning("⚠️ This item is being used by another user");
+                        message.warning(
+                          "⚠️ This item is being used by another user",
+                        );
                         return;
                       }
 
-                      // ✅ 3. Lock current product
                       await supabase
                         .from("cycle_items")
                         .update({
@@ -2689,17 +2750,17 @@ export default function YearEndPage() {
                         })
                         .eq("item_id", r.id);
 
-                      // ✅ 4. Select product
+                      // ✅ SELECT PRODUCT
                       setSelectedProduct(r);
+
+                      // ✅ FETCH SAVED ALLOCATIONS
+                      await fetchSavedAllocations(r);
                     } catch (err) {
                       console.error(err);
                       message.error("Error locking item");
                     }
                   },
                 })}
-
-
-
                 pagination={false}
                 size="small"
                 scroll={{ y: "60vh" }}
@@ -2709,7 +2770,9 @@ export default function YearEndPage() {
                     title: "SL",
                     dataIndex: "sl_no",
                     width: 60,
-                    render: (val) => <Text style={{ fontSize: 12 }}>{val}</Text>,
+                    render: (val) => (
+                      <Text style={{ fontSize: 12 }}>{val}</Text>
+                    ),
                   },
                   {
                     title: "Item",
@@ -2813,7 +2876,8 @@ export default function YearEndPage() {
                         return isSubmitted && hasQty;
                       })
                       .reduce((acc, u) => {
-                        const batch = u.count_batch_no || u.count_serial_no || "N/A";
+                        const batch =
+                          u.count_batch_no || u.count_serial_no || "N/A";
                         const qty = Number(u.count_quantity) || 0;
 
                         if (!acc[batch]) {
@@ -2827,7 +2891,7 @@ export default function YearEndPage() {
 
                         acc[batch].qty += qty;
                         return acc;
-                      }, {})
+                      }, {}),
                   )
                     // .filter((b) => b.qty > 0) // ✅ ONLY batches with total > 0
                     .map((b, i) => (
@@ -2856,7 +2920,11 @@ export default function YearEndPage() {
                           <Text style={{ fontSize: 13 }}>{b.qty}</Text>
                         </Col>
 
-                        <Col span={5} style={{ textAlign: "center" }} className="no-print">
+                        <Col
+                          span={5}
+                          style={{ textAlign: "center" }}
+                          className="no-print"
+                        >
                           <Text type="secondary" style={{ fontSize: 11 }}>
                             {dayjs(b.lastDate).format("DD/MM HH:mm")}
                           </Text>
@@ -2889,7 +2957,9 @@ export default function YearEndPage() {
                       </Text>
                     </Col>
                     <Col span={3}>
-                      <Text strong style={{ fontSize: 10 }}>MRP</Text>
+                      <Text strong style={{ fontSize: 10 }}>
+                        MRP
+                      </Text>
                     </Col>
                     <Col span={3}>
                       <Text strong style={{ fontSize: 10 }}>
@@ -2905,14 +2975,17 @@ export default function YearEndPage() {
                       const isZero = Number(u.count_quantity) === 0;
 
                       // 2. Check the status (ensure it matches your 'submitted' string exactly)
-                      const isSubmitted = u.status === 'submitted';
+                      const isSubmitted = u.status === "submitted";
 
                       // 3. Return FALSE only if BOTH are true (this "disables/hides" the row)
                       return !(isZero && isSubmitted);
                     })
                     .map((u) => (
-
-                      <Row key={u.tempId} gutter={5} style={{ marginBottom: 10 }}>
+                      <Row
+                        key={u.tempId}
+                        gutter={5}
+                        style={{ marginBottom: 10 }}
+                      >
                         <Col span={8}>
                           <AutoComplete
                             style={{ width: "100%" }}
@@ -2923,16 +2996,21 @@ export default function YearEndPage() {
 
                               // ✅ auto-fill expiry
                               if (option?.expiry) {
-                                updateField(u.tempId, "expiry_date", dayjs(option.expiry));
+                                updateField(
+                                  u.tempId,
+                                  "expiry_date",
+                                  dayjs(option.expiry),
+                                );
                               }
                             }}
-                            onChange={(val) => updateField(u.tempId, "batch_no", val)}
+                            onChange={(val) =>
+                              updateField(u.tempId, "batch_no", val)
+                            }
                             disabled={u.isSystem}
                           >
                             <Input placeholder="Select Batch..." />
                           </AutoComplete>
                         </Col>
-
 
                         <Col span={6}>
                           <DatePicker
@@ -2952,7 +3030,6 @@ export default function YearEndPage() {
                             style={{ width: "100%" }}
                             value={u.mrp}
                             onChange={(v) => updateField(u.tempId, "mrp", v)}
-
                           />
                         </Col>
                         <Col span={3}>
@@ -2965,7 +3042,9 @@ export default function YearEndPage() {
                                 ? null
                                 : u.quantity
                             }
-                            onChange={(v) => updateField(u.tempId, "quantity", v)}
+                            onChange={(v) =>
+                              updateField(u.tempId, "quantity", v)
+                            }
                           />
                         </Col>
                         <Col span={2}>
@@ -2987,7 +3066,7 @@ export default function YearEndPage() {
                       </Row>
                     ))}
 
-                  <Card
+                  <Card className="no-print"
                     size="small"
                     style={{
                       marginTop: 20,
@@ -3062,23 +3141,29 @@ export default function YearEndPage() {
                     value={selectedWarehouse}
                     onChange={(value) => {
                       setSelectedWarehouse(value);
+
+                      // reset rack when warehouse changes
+                      setAllocationForm((p) => ({
+                        ...p,
+                        rack: null,
+                      }));
+
                       loadWarehouseBatches(value);
+                      fetchRacks(value);
                     }}
-                    options={[
-                      { value: "main", label: "Main Warehouse" },
-                      { value: "godown-1", label: "Godown 1" },
-                      { value: "godown-2", label: "Godown 2" },
-                    ]}
+                    options={warehouses.map((w) => ({
+                      label: w.name, // Terrace / Basement / Main
+                      value: w.id, // T / B / M  👈 IMPORTANT
+                    }))}
                   />
                 </div>
-
               </>
             </div>
           )}
           {activeTab === "submitted" &&
             selectedProduct &&
             selectedWarehouse &&
-            warehouseBatches.length > 0 && (
+            (warehouseBatches.length > 0 || savedAllocations.length > 0) &&(
               //------- Batch Allocations Section --------- //
               <>
                 <Divider />
@@ -3098,7 +3183,11 @@ export default function YearEndPage() {
                           {/* Batch Cards */}
                           <div className="grid grid-cols-5 gap-3">
                             {warehouseBatches
-                              .filter((batch) => batch.available_qty && Number(batch.available_qty) > 0)
+                              .filter(
+                                (batch) =>
+                                  batch.available_qty &&
+                                  Number(batch.available_qty) > 0,
+                              )
                               .map((batch) => {
                                 const isFinished =
                                   getRemainingQty(batch.batch_no) === 0;
@@ -3133,7 +3222,7 @@ export default function YearEndPage() {
                                           : "pointer",
                                         border:
                                           selectedBatch?.batch_no ===
-                                            batch.batch_no
+                                          batch.batch_no
                                             ? "2px solid #1677ff"
                                             : "1px solid #e5e7eb",
                                       }}
@@ -3155,7 +3244,9 @@ export default function YearEndPage() {
                                       <div
                                         style={{
                                           fontSize: 12,
-                                          color: isFinished ? "#b7b7b7" : "#666",
+                                          color: isFinished
+                                            ? "#b7b7b7"
+                                            : "#666",
                                         }}
                                       >
                                         {isFinished ? (
@@ -3193,11 +3284,13 @@ export default function YearEndPage() {
                                         rack: v,
                                       }))
                                     }
-                                    options={[
-                                      { label: "R1", value: "R1" },
-                                      { label: "R2", value: "R2" },
-                                      { label: "R3", value: "R3" },
-                                    ]}
+                                    options={racks.map((r) => ({
+                                      label: r.racks,
+                                      value: r.racks,
+                                    }))}
+                                    disabled={!selectedWarehouse}
+                                    showSearch
+                                    optionFilterProp="label"
                                   />
                                 </Col>
 
@@ -3206,6 +3299,7 @@ export default function YearEndPage() {
                                     placeholder="Compartment"
                                     value={allocationForm.compartment}
                                     style={{ width: "100%" }}
+                                    disabled
                                     onChange={(v) =>
                                       setAllocationForm((p) => ({
                                         ...p,
@@ -3267,17 +3361,17 @@ export default function YearEndPage() {
                                     getRemainingQty(
                                       selectedBatch?.batch_no,
                                     ) && (
-                                      <div
-                                        style={{
-                                          color: "#ff4d4f",
-                                          fontSize: "11px",
-                                          marginTop: "4px",
-                                        }}
-                                      >
-                                        Max:{" "}
-                                        {getRemainingQty(selectedBatch?.batch_no)}
-                                      </div>
-                                    )}
+                                    <div
+                                      style={{
+                                        color: "#ff4d4f",
+                                        fontSize: "11px",
+                                        marginTop: "4px",
+                                      }}
+                                    >
+                                      Max:{" "}
+                                      {getRemainingQty(selectedBatch?.batch_no)}
+                                    </div>
+                                  )}
                                 </Col>
 
                                 <Col span={3}>
@@ -3288,7 +3382,7 @@ export default function YearEndPage() {
                                     disabled={
                                       !allocationForm.qty ||
                                       allocationForm.qty >
-                                      getRemainingQty(selectedBatch?.batch_no)
+                                        getRemainingQty(selectedBatch?.batch_no)
                                     }
                                   ></Button>
                                 </Col>
@@ -3352,20 +3446,36 @@ export default function YearEndPage() {
                       label: "Finished",
                       children: (
                         <Table
-                          dataSource={finishedBatches}
-                          rowKey="batch_no"
+                          dataSource={savedAllocations}
+                          rowKey="id"
                           pagination={false}
                           columns={[
+                            { title: "Batch", dataIndex: "batch_no" },
+                            { title: "Rack", dataIndex: "rack" },
+                            { title: "Qty", dataIndex: "qty" },
                             {
-                              title: "Batch",
-                              dataIndex: "batch_no",
-                            },
-                            {
-                              title: "Allocated Qty",
-                              render: (b) =>
-                                allocations
-                                  .filter((a) => a.batch_no === b.batch_no)
-                                  .reduce((s, a) => s + Number(a.qty || 0), 0),
+                              title: "Action",
+                              render: (_, record) => (
+                                <Button
+                                  danger
+                                  type="text"
+                                  icon={<DeleteOutlined />}
+                                  onClick={async () => {
+                                    await supabase
+                                      .from("cycle_allocations")
+                                      .delete()
+                                      .eq("id", record.id);
+
+                                    message.success("Deleted");
+
+                                    // 🔥 refresh both
+                                    await fetchSavedAllocations(selectedProduct);
+                                    await loadWarehouseBatches(
+                                      selectedWarehouse,
+                                    );
+                                  }}
+                                />
+                              ),
                             },
                           ]}
                         />
@@ -3380,6 +3490,7 @@ export default function YearEndPage() {
                   block
                   disabled={!allFinished}
                   style={{ marginTop: 20 }}
+                  onClick={handleFinalSubmit}
                 >
                   Final Submit
                 </Button>
