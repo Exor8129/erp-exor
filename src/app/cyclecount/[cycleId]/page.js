@@ -2568,38 +2568,117 @@ const fetchSavedAllocations = async (product) => {
 /////////////////////////////////////////////////////////////
 
 const handlePrint = () => {
-  
-  if (!selectedProduct || countingUnits.length === 0) {
+  if (!selectedProduct) {
     message.warning("No data to print");
     return;
   }
 
-  console.log("PRINT DATA:", selectedProduct, countingUnits);
-
   const printWindow = window.open("", "_blank");
 
-const rows = countingUnits
-  .map((u, i) => {
-    const batch = u.batch_no || "-";
-    const expiry = u.expiry_date
-      ? dayjs(u.expiry_date).format("DD-MM-YYYY")
-      : "-";
-    const mrp = u.mrp ?? "-";
-    const qty = u.quantity ?? "-";
+  // ✅ 1. GET SUBMITTED DATA (HISTORY)
+  const submittedRows = Object.values(
+    (selectedProduct?.systemUnits || [])
+      .filter((u) => {
+        const isSubmitted = u.status === "submitted";
+        const hasQty = Number(u.count_quantity) > 0;
+        return isSubmitted && hasQty;
+      })
+      .reduce((acc, u) => {
+        const batch = u.count_batch_no || u.count_serial_no || "-";
+        const qty = Number(u.count_quantity) || 0;
 
-    return `
-      <tr>
-        <td>${i + 1}</td>
-        <td>${batch}</td>
-        <td>${expiry}</td>
-        <td>${mrp}</td>
-        <td>${qty}</td>
-      </tr>
-    `;
-  })
-  .join("");
+        if (!acc[batch]) {
+          acc[batch] = {
+            batch_no: batch,
+            quantity: 0,
+            expiry_date: u.count_expiry_date,
+            mrp: u.mrp ?? "-",
+          };
+        }
 
- const html = `
+        acc[batch].quantity += qty;
+        return acc;
+      }, {})
+  );
+
+  // ✅ 2. NORMALIZE NEW ENTRIES
+  const newRows = (countingUnits || []).map((u) => ({
+    batch_no: u.batch_no || "-",
+    expiry_date: u.expiry_date,
+    mrp: u.mrp ?? "-",
+    quantity: u.quantity ?? "-",
+  }));
+
+  // ✅ 3. MERGE BOTH
+  const allRows = [...submittedRows, ...newRows];
+
+  if (allRows.length === 0) {
+    message.warning("No data to print");
+    return;
+  }
+
+  console.log("FINAL PRINT DATA:", allRows);
+
+  // ✅ 4. TOTAL QTY
+  const totalQty = allRows.reduce(
+    (sum, r) => sum + Number(r.quantity || 0),
+    0
+  );
+
+  // ✅ 5. GENERATE DATA ROWS
+  const rows = allRows
+    .map((u, i) => {
+      const batch = u.batch_no || "-";
+      const expiry = u.expiry_date
+        ? dayjs(u.expiry_date).format("DD-MM-YYYY")
+        : "-";
+      const mrp = u.mrp ?? "-";
+      const qty = u.quantity ?? "-";
+
+      return `
+        <tr>
+          <td>${i + 1}</td>
+          <td>${batch}</td>
+          <td>${expiry}</td>
+          <td>${mrp}</td>
+          <td>${qty}</td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  // ✅ 6. AUTO BLANK ROWS (FIT PAGE)
+  const maxRowsPerPage = 22; // 🔥 adjust once based on printer
+  const blankRowCount = Math.max(0, maxRowsPerPage - allRows.length - 1); // -1 for total row
+
+  const blankRows = Array.from({ length: blankRowCount })
+    .map(
+      () => `
+        <tr>
+          <td>&nbsp;</td>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td></td>
+        </tr>
+      `
+    )
+    .join("");
+
+  // ✅ 7. TOTAL ROW
+  const totalRow = `
+    <tr>
+      <td colspan="4" style="text-align:right; font-weight:bold;">
+        TOTAL
+      </td>
+      <td style="font-weight:bold;">
+        ${totalQty || " "}
+      </td>
+    </tr>
+  `;
+
+  // ✅ 8. HTML TEMPLATE
+  const html = `
 <html>
 <head>
 <style>
@@ -2636,6 +2715,9 @@ const rows = countingUnits
     background: #f0f0f0;
   }
 
+  .total-row td {
+    border-top: 1px solid #000;
+  }
 </style>
 </head>
 
@@ -2660,6 +2742,8 @@ const rows = countingUnits
 
       <tbody>
         ${rows}
+        ${blankRows}
+        ${totalRow}
       </tbody>
     </table>
 
@@ -2676,7 +2760,6 @@ const rows = countingUnits
     printWindow.close();
   }, 500);
 };
-
 
 
 
