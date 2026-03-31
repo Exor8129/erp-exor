@@ -27,20 +27,21 @@ export default function PrintCountPage() {
   // -----------------------------
   // FETCH DATA
   // -----------------------------
- const fetchData = async () => {
-  if (!cycleId) return;
+  const fetchData = async () => {
+    if (!cycleId) return;
 
-  try {
-    setLoading(true);
+    try {
+      setLoading(true);
 
-    let allData = [];
-    let from = 0;
-    const step = 1000;
+      let allData = [];
+      let from = 0;
+      const step = 1000;
 
-    while (true) {
-      const { data, error } = await supabase
-        .from("cycle_items")
-        .select(`
+      while (true) {
+        const { data, error } = await supabase
+          .from("cycle_items")
+          .select(
+            `
           id,
           item_id,
           sl_no,
@@ -49,57 +50,58 @@ export default function PrintCountPage() {
           sys_quantity,
           mrp,
           item_master (item_name)
-        `)
-        .eq("cycle_id", cycleId)
-        .order("sl_no", { ascending: true })
-        .range(from, from + step - 1); // 🔥 KEY FIX
+        `,
+          )
+          .eq("cycle_id", cycleId)
+          .order("sl_no", { ascending: true })
+          .range(from, from + step - 1); // 🔥 KEY FIX
 
-      if (error) throw error;
+        if (error) throw error;
 
-      if (!data || data.length === 0) break;
+        if (!data || data.length === 0) break;
 
-      allData = [...allData, ...data];
+        allData = [...allData, ...data];
 
-      if (data.length < step) break;
+        if (data.length < step) break;
 
-      from += step;
-    }
-
-    console.log("✅ Total rows fetched:", allData.length);
-
-    // -----------------------------
-    // GROUPING (same)
-    // -----------------------------
-    const map = new Map();
-
-    allData.forEach((row) => {
-      let existing = map.get(row.item_id);
-
-      if (!existing) {
-        existing = {
-          item_id: row.item_id,
-          item_name: row.item_master?.item_name,
-          sl_no: row.sl_no,
-          units: [],
-        };
+        from += step;
       }
 
-      existing.units.push(row);
-      map.set(row.item_id, existing);
-    });
+      console.log("✅ Total rows fetched:", allData.length);
 
-    const finalProducts = Array.from(map.values());
+      // -----------------------------
+      // GROUPING (same)
+      // -----------------------------
+      const map = new Map();
 
-    console.log("📦 Total items after grouping:", finalProducts.length);
+      allData.forEach((row) => {
+        let existing = map.get(row.item_id);
 
-    setProducts(finalProducts);
-  } catch (err) {
-    console.error(err);
-    message.error("Error loading data");
-  } finally {
-    setLoading(false);
-  }
-};
+        if (!existing) {
+          existing = {
+            item_id: row.item_id,
+            item_name: row.item_master?.item_name,
+            sl_no: row.sl_no,
+            units: [],
+          };
+        }
+
+        existing.units.push(row);
+        map.set(row.item_id, existing);
+      });
+
+      const finalProducts = Array.from(map.values());
+
+      console.log("📦 Total items after grouping:", finalProducts.length);
+
+      setProducts(finalProducts);
+    } catch (err) {
+      console.error(err);
+      message.error("Error loading data");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!cycleId) return; // ✅ prevent undefined API call
@@ -268,7 +270,9 @@ export default function PrintCountPage() {
             bordered
             className="print-table"
             size="small"
-            rowClassName={(record, index) => (index % 2 === 0 ? "row-light" : "row-dark")}
+            rowClassName={(record, index) =>
+              index % 2 === 0 ? "row-light" : "row-dark"
+            }
           />
         </Card>
       </div>
@@ -302,17 +306,20 @@ export default function PrintCountPage() {
             font-size: 10px;
           }
 
-          .ant-table {
-            border: 1px solid #000;
+          .ant-table,
+          .ant-table table {
+            border: 1px solid #000 !important;
           }
 
           .ant-table-thead > tr > th {
+            border: 1px solid #000 !important;
             padding: 4px !important;
             font-size: 10px;
             line-height: 1.2;
           }
 
           .ant-table-tbody > tr > td {
+            border: 1px solid #000 !important;
             padding: 3px 4px !important;
             font-size: 10px;
             line-height: 1.2;

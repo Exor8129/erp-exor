@@ -1563,7 +1563,7 @@
 
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "../../lib/supabase";
 import { useParams } from "next/navigation";
 import {
@@ -1672,9 +1672,6 @@ const thermalStyles = `
 }
 `;
 
-
-
-
 export default function YearEndPage() {
   const params = useParams();
   const cycleId = params?.cycleId;
@@ -1703,6 +1700,11 @@ export default function YearEndPage() {
   const [racks, setRacks] = useState([]);
   const [finalSubmitted, setFinalSubmitted] = useState(false);
   const [savedAllocations, setSavedAllocations] = useState([]);
+  const selectedProductRef = useRef(null);
+
+  useEffect(() => {
+  selectedProductRef.current = selectedProduct;
+}, [selectedProduct]);
 
   const tabLabel = (text, count) => (
     <div style={{ display: "flex", gap: 6 }}>
@@ -1846,40 +1848,95 @@ export default function YearEndPage() {
   //   return () => clearInterval(interval);
   // }, [isLoggedIn, cycleId]);
 
-  useEffect(() => {
-    if (!isLoggedIn || !cycleId) return;
 
-    const channel = supabase
-      .channel("cycle-items-realtime")
-      .on(
-        "postgres_changes",
-        {
-          event: "*", // INSERT, UPDATE, DELETE
-          schema: "public",
-          table: "cycle_items",
-          filter: `cycle_id=eq.${cycleId}`, // 🎯 IMPORTANT (only this cycle)
-        },
-        (payload) => {
-          console.log("🔄 Realtime change:", payload);
 
-          // 🔥 IMPORTANT: Avoid interrupting user input
-          const isUserEditing = !!selectedProduct;
 
-          if (isUserEditing) {
-            console.log("⏸ Skipped refresh (user editing)");
-            return;
-          }
 
-          // ✅ Soft refresh
+  // useEffect(() => {
+  //   if (!isLoggedIn || !cycleId) return;
+
+  //   const channel = supabase
+  //     .channel("cycle-items-realtime")
+  //     .on(
+  //       "postgres_changes",
+  //       {
+  //         event: "*", // INSERT, UPDATE, DELETE
+  //         schema: "public",
+  //         table: "cycle_items",
+  //         filter: `cycle_id=eq.${cycleId}`, // 🎯 IMPORTANT (only this cycle)
+  //       },
+  //       (payload) => {
+  //         console.log("🔄 Realtime change:", payload);
+
+  //         // 🔥 IMPORTANT: Avoid interrupting user input
+  //         const isUserEditing = !!selectedProduct;
+
+  //         if (isUserEditing) {
+  //           console.log("⏸ Skipped refresh (user editing)");
+  //           return;
+  //         }
+
+  //         // ✅ Soft refresh
+  //         fetchInventory();
+  //       },
+  //     )
+  //     .subscribe();
+
+  //   return () => {
+  //     supabase.removeChannel(channel);
+  //   };
+  // }, [isLoggedIn, cycleId, selectedProduct]);
+
+
+
+
+
+const refreshTimeout = useRef(null);
+
+useEffect(() => {
+  if (!isLoggedIn || !cycleId) return;
+
+  const channel = supabase
+    .channel(`cycle-items-${cycleId}`)
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "cycle_items",
+        filter: `cycle_id=eq.${cycleId}`,
+      },
+      (payload) => {
+        console.log("🔄 Realtime change:", payload);
+
+        if (selectedProductRef.current) {
+          console.log("⏸ Skipped (editing)");
+          return;
+        }
+
+        // ✅ DEBOUNCE START
+        if (refreshTimeout.current) {
+          clearTimeout(refreshTimeout.current);
+        }
+
+        refreshTimeout.current = setTimeout(() => {
+          console.log("🚀 Fetching once after burst...");
           fetchInventory();
-        },
-      )
-      .subscribe();
+        }, 500); // wait 500ms for all events
+      }
+    )
+    .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [isLoggedIn, cycleId, selectedProduct]);
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}, [isLoggedIn, cycleId]);
+
+
+
+
+
+
 
   useEffect(() => {
     setMounted(true);
@@ -2426,76 +2483,128 @@ export default function YearEndPage() {
     if (!error) setRacks(data || []);
   };
 
-const handleFinalSubmit = async () => {
-  if (finalSubmitted) return;
-  setFinalSubmitted(true);
+  const handleFinalSubmit = async () => {
+    if (finalSubmitted) return;
+    setFinalSubmitted(true);
 
-  try {
-    if (!allFinished) {
-      message.error("All batches must be fully allocated");
-      setFinalSubmitted(false);
-      return;
-    }
+    try {
+      if (!allFinished) {
+        message.error("All batches must be fully allocated");
+        setFinalSubmitted(false);
+        return;
+      }
 
-    const inserts = [];
+      const inserts = [];
 
-    warehouseBatches.forEach((batch) => {
-      batch.allocations?.forEach((a) => {
-        inserts.push({
-          batch_no: batch.batch_no,
-          rack: a.rack,
-          qty: a.qty,
-          item_id: selectedProduct.id,
-          cycle_id: selectedProduct.cycle_id,
+      warehouseBatches.forEach((batch) => {
+        batch.allocations?.forEach((a) => {
+          inserts.push({
+            batch_no: batch.batch_no,
+            rack: a.rack,
+            qty: a.qty,
+            item_id: selectedProduct.id,
+            cycle_id: selectedProduct.cycle_id,
+          });
         });
       });
-    });
 
-    if (inserts.length === 0) {
-      message.warning("No allocations to save");
+      if (inserts.length === 0) {
+        message.warning("No allocations to save");
+        setFinalSubmitted(false);
+        return;
+      }
+
+      const { error } = await supabase
+        .from("cycle_allocations")
+        .insert(inserts);
+
+      if (error) throw error;
+
+      message.success("Final Allocation Saved ✅");
+
+      // ✅🔥 THIS IS WHAT YOU MISSED
+      await fetchSavedAllocations(selectedProduct);
+
+      // ✅ refresh pending
+      await loadWarehouseBatches(selectedWarehouse);
+
       setFinalSubmitted(false);
-      return;
+    } catch (err) {
+      console.error(err);
+      message.error("Error saving allocation");
+      setFinalSubmitted(false);
     }
+  };
 
-    const { error } = await supabase
+  const loadWarehouseBatches = async (warehouseId) => {
+    console.log("🔥 loadWarehouseBatches called", warehouseId);
+
+    try {
+      if (!selectedProduct) return;
+
+      // ✅ FETCH allocations using item_id + cycle_id
+      const { data: allocations, error } = await supabase
+        .from("cycle_allocations")
+        .select("id, batch_no, qty")
+        .eq("item_id", selectedProduct.id)
+        .eq("cycle_id", selectedProduct.cycle_id);
+
+      if (error) {
+        console.error(error);
+        message.error("Failed to load allocations");
+        return;
+      }
+
+      // ✅ Build allocated map
+      const allocatedMap = {};
+      allocations.forEach((a) => {
+        const batch = a.batch_no || "N/A";
+        if (!allocatedMap[batch]) allocatedMap[batch] = 0;
+        allocatedMap[batch] += Number(a.qty || 0);
+      });
+
+      // ✅ Build grouped counts
+      const grouped = {};
+      selectedProduct.systemUnits
+        .filter((u) => u.status === "submitted")
+        .forEach((u) => {
+          const qty = Number(u.count_quantity) || 0;
+          if (!qty) return;
+
+          const batch = u.count_batch_no || "N/A";
+
+          if (!grouped[batch]) grouped[batch] = 0;
+          grouped[batch] += qty;
+        });
+
+      // ✅ Final batches
+      const formatted = Object.entries(grouped)
+        .map(([batch, totalQty]) => {
+          const allocatedQty = allocatedMap[batch] || 0;
+
+          return {
+            batch_no: batch,
+            available_qty: totalQty - allocatedQty,
+            allocations: [],
+          };
+        })
+        .filter((b) => b.available_qty > 0);
+
+      setWarehouseBatches(formatted);
+    } catch (err) {
+      console.error(err);
+      message.error("Error loading warehouse batches");
+    }
+  };
+
+  const fetchSavedAllocations = async (product) => {
+    if (!product) return;
+
+    const { data, error } = await supabase
       .from("cycle_allocations")
-      .insert(inserts);
-
-    if (error) throw error;
-
-    message.success("Final Allocation Saved ✅");
-
-    // ✅🔥 THIS IS WHAT YOU MISSED
-    await fetchSavedAllocations(selectedProduct);
-
-    // ✅ refresh pending
-    await loadWarehouseBatches(selectedWarehouse);
-
-    setFinalSubmitted(false);
-
-  } catch (err) {
-    console.error(err);
-    message.error("Error saving allocation");
-    setFinalSubmitted(false);
-  }
-};
-
-
-
-
-
- const loadWarehouseBatches = async (warehouseId) => {
-  console.log("🔥 loadWarehouseBatches called", warehouseId);
-
-  try {
-    if (!selectedProduct) return;
-
-    // ✅ FETCH allocations using item_id + cycle_id
-    const { data: allocations, error } = await supabase
-      .from("cycle_allocations")
-      .select("id, batch_no, qty")
-      .eq("item_id", selectedProduct.id)
-      .eq("cycle_id", selectedProduct.cycle_id);
+      .select("*")
+      .eq("item_id", product.id)
+      .eq("cycle_id", product.cycle_id);
 
     if (error) {
       console.error(error);
@@ -2503,139 +2612,82 @@ const handleFinalSubmit = async () => {
       return;
     }
 
-    // ✅ Build allocated map
-    const allocatedMap = {};
-    allocations.forEach((a) => {
-      const batch = a.batch_no || "N/A";
-      if (!allocatedMap[batch]) allocatedMap[batch] = 0;
-      allocatedMap[batch] += Number(a.qty || 0);
-    });
+    setSavedAllocations(data || []);
+  };
 
-    // ✅ Build grouped counts
-    const grouped = {};
-    selectedProduct.systemUnits
-      .filter((u) => u.status === "submitted")
-      .forEach((u) => {
-        const qty = Number(u.count_quantity) || 0;
-        if (!qty) return;
+  /////////////////////////////////////////////////////////////
+  ///////////////CODE FOR PRINTING SLIP (STARTS) //////////////
+  /////////////////////////////////////////////////////////////
 
-        const batch = u.count_batch_no || "N/A";
+  const handlePrint = () => {
+    if (!selectedProduct) {
+      message.warning("No data to print");
+      return;
+    }
 
-        if (!grouped[batch]) grouped[batch] = 0;
-        grouped[batch] += qty;
-      });
+    const printWindow = window.open("", "_blank");
 
-    // ✅ Final batches
-    const formatted = Object.entries(grouped)
-      .map(([batch, totalQty]) => {
-        const allocatedQty = allocatedMap[batch] || 0;
+    // ✅ 1. GET SUBMITTED DATA (HISTORY)
+    const submittedRows = Object.values(
+      (selectedProduct?.systemUnits || [])
+        .filter((u) => {
+          const isSubmitted = u.status === "submitted";
+          const hasQty = Number(u.count_quantity) > 0;
+          return isSubmitted && hasQty;
+        })
+        .reduce((acc, u) => {
+          const batch = u.count_batch_no || u.count_serial_no || "-";
+          const qty = Number(u.count_quantity) || 0;
 
-        return {
-          batch_no: batch,
-          available_qty: totalQty - allocatedQty,
-          allocations: [],
-        };
-      })
-      .filter((b) => b.available_qty > 0);
+          if (!acc[batch]) {
+            acc[batch] = {
+              batch_no: batch,
+              quantity: 0,
+              expiry_date: u.count_expiry_date,
+              mrp: u.mrp ?? "-",
+            };
+          }
 
-    setWarehouseBatches(formatted);
-  } catch (err) {
-    console.error(err);
-    message.error("Error loading warehouse batches");
-  }
-};
+          acc[batch].quantity += qty;
+          return acc;
+        }, {}),
+    );
 
-const fetchSavedAllocations = async (product) => {
-  if (!product) return;
+    // ✅ 2. NORMALIZE NEW ENTRIES
+    const newRows = (countingUnits || []).map((u) => ({
+      batch_no: u.batch_no || "-",
+      expiry_date: u.expiry_date,
+      mrp: u.mrp ?? "-",
+      quantity: u.quantity ?? "-",
+    }));
 
-  const { data, error } = await supabase
-    .from("cycle_allocations")
-    .select("*")
-    .eq("item_id", product.id)
-    .eq("cycle_id", product.cycle_id);
+    // ✅ 3. MERGE BOTH
+    const allRows = [...submittedRows, ...newRows];
 
-  if (error) {
-    console.error(error);
-    message.error("Failed to load allocations");
-    return;
-  }
+    if (allRows.length === 0) {
+      message.warning("No data to print");
+      return;
+    }
 
-  setSavedAllocations(data || []);
-};
+    console.log("FINAL PRINT DATA:", allRows);
 
-/////////////////////////////////////////////////////////////
-///////////////CODE FOR PRINTING SLIP (STARTS) //////////////
-/////////////////////////////////////////////////////////////
+    // ✅ 4. TOTAL QTY
+    const totalQty = allRows.reduce(
+      (sum, r) => sum + Number(r.quantity || 0),
+      0,
+    );
 
-const handlePrint = () => {
-  if (!selectedProduct) {
-    message.warning("No data to print");
-    return;
-  }
+    // ✅ 5. GENERATE DATA ROWS
+    const rows = allRows
+      .map((u, i) => {
+        const batch = u.batch_no || "-";
+        const expiry = u.expiry_date
+          ? dayjs(u.expiry_date).format("DD-MM-YYYY")
+          : "-";
+        const mrp = u.mrp ?? "-";
+        const qty = u.quantity ?? "-";
 
-  const printWindow = window.open("", "_blank");
-
-  // ✅ 1. GET SUBMITTED DATA (HISTORY)
-  const submittedRows = Object.values(
-    (selectedProduct?.systemUnits || [])
-      .filter((u) => {
-        const isSubmitted = u.status === "submitted";
-        const hasQty = Number(u.count_quantity) > 0;
-        return isSubmitted && hasQty;
-      })
-      .reduce((acc, u) => {
-        const batch = u.count_batch_no || u.count_serial_no || "-";
-        const qty = Number(u.count_quantity) || 0;
-
-        if (!acc[batch]) {
-          acc[batch] = {
-            batch_no: batch,
-            quantity: 0,
-            expiry_date: u.count_expiry_date,
-            mrp: u.mrp ?? "-",
-          };
-        }
-
-        acc[batch].quantity += qty;
-        return acc;
-      }, {})
-  );
-
-  // ✅ 2. NORMALIZE NEW ENTRIES
-  const newRows = (countingUnits || []).map((u) => ({
-    batch_no: u.batch_no || "-",
-    expiry_date: u.expiry_date,
-    mrp: u.mrp ?? "-",
-    quantity: u.quantity ?? "-",
-  }));
-
-  // ✅ 3. MERGE BOTH
-  const allRows = [...submittedRows, ...newRows];
-
-  if (allRows.length === 0) {
-    message.warning("No data to print");
-    return;
-  }
-
-  console.log("FINAL PRINT DATA:", allRows);
-
-  // ✅ 4. TOTAL QTY
-  const totalQty = allRows.reduce(
-    (sum, r) => sum + Number(r.quantity || 0),
-    0
-  );
-
-  // ✅ 5. GENERATE DATA ROWS
-  const rows = allRows
-    .map((u, i) => {
-      const batch = u.batch_no || "-";
-      const expiry = u.expiry_date
-        ? dayjs(u.expiry_date).format("DD-MM-YYYY")
-        : "-";
-      const mrp = u.mrp ?? "-";
-      const qty = u.quantity ?? "-";
-
-      return `
+        return `
         <tr>
           <td>${i + 1}</td>
           <td>${batch}</td>
@@ -2644,16 +2696,16 @@ const handlePrint = () => {
           <td>${qty}</td>
         </tr>
       `;
-    })
-    .join("");
+      })
+      .join("");
 
-  // ✅ 6. AUTO BLANK ROWS (FIT PAGE)
-  const maxRowsPerPage = 22; // 🔥 adjust once based on printer
-  const blankRowCount = Math.max(0, maxRowsPerPage - allRows.length - 1); // -1 for total row
+    // ✅ 6. AUTO BLANK ROWS (FIT PAGE)
+    const maxRowsPerPage = 22; // 🔥 adjust once based on printer
+    const blankRowCount = Math.max(0, maxRowsPerPage - allRows.length - 1); // -1 for total row
 
-  const blankRows = Array.from({ length: blankRowCount })
-    .map(
-      () => `
+    const blankRows = Array.from({ length: blankRowCount })
+      .map(
+        () => `
         <tr>
           <td>&nbsp;</td>
           <td></td>
@@ -2661,12 +2713,12 @@ const handlePrint = () => {
           <td></td>
           <td></td>
         </tr>
-      `
-    )
-    .join("");
+      `,
+      )
+      .join("");
 
-  // ✅ 7. TOTAL ROW
-  const totalRow = `
+    // ✅ 7. TOTAL ROW
+    const totalRow = `
     <tr>
       <td colspan="4" style="text-align:right; font-weight:bold;">
         TOTAL
@@ -2677,8 +2729,8 @@ const handlePrint = () => {
     </tr>
   `;
 
-  // ✅ 8. HTML TEMPLATE
-  const html = `
+    // ✅ 8. HTML TEMPLATE
+    const html = `
 <html>
 <head>
 <style>
@@ -2752,30 +2804,22 @@ const handlePrint = () => {
 </html>
 `;
 
-  printWindow.document.write(html);
-  printWindow.document.close();
+    printWindow.document.write(html);
+    printWindow.document.close();
 
-  setTimeout(() => {
-    printWindow.print();
-    printWindow.close();
-  }, 500);
-};
+    setTimeout(() => {
+      printWindow.print();
+      printWindow.close();
+    }, 500);
+  };
 
-
-
-/////////////////////////////////////////////////////////////
-///////////////CODE FOR PRINTING SLIP (ENDS) ////////////////
-/////////////////////////////////////////////////////////////
-
-
-
+  /////////////////////////////////////////////////////////////
+  ///////////////CODE FOR PRINTING SLIP (ENDS) ////////////////
+  /////////////////////////////////////////////////////////////
 
   ////////////////////////////////////////////////////////////
   ////////////NEW CODES AFTER DEPLOYMENT (ENDS) ////////////
   ////////////////////////////////////////////////////////////
-
-
-
 
   return (
     <div
@@ -2876,9 +2920,33 @@ const handlePrint = () => {
               {/* RESTORED TABS */}
               <Tabs
                 activeKey={activeTab}
-                onChange={(key) => {
+                // onChange={(key) => {
+                //   setActiveTab(key);
+                //   setSelectedProduct(null); // 👈 Reset selection when tab changes
+
+                // }}
+
+                onChange={async (key) => {
                   setActiveTab(key);
-                  setSelectedProduct(null); // 👈 Reset selection when tab changes
+
+                  // reset selection
+                  setSelectedProduct(null);
+
+                  // ✅ refresh based on tab
+                  if (
+                    key === "all" ||
+                    key === "pending" ||
+                    key === "submitted" ||
+                    key === "recount" ||
+                    key === "editable"
+                  ) {
+                    await fetchInventory();
+                  }
+
+                  // ✅ if allocation tab related
+                  if (key === "submitted" && selectedWarehouse) {
+                    await loadWarehouseBatches(selectedWarehouse);
+                  }
                 }}
                 items={[
                   {
@@ -3312,7 +3380,8 @@ const handlePrint = () => {
                       </Row>
                     ))}
 
-                  <Card className="no-print"
+                  <Card
+                    className="no-print"
                     size="small"
                     style={{
                       marginTop: 20,
@@ -3409,7 +3478,7 @@ const handlePrint = () => {
           {activeTab === "submitted" &&
             selectedProduct &&
             selectedWarehouse &&
-            (warehouseBatches.length > 0 || savedAllocations.length > 0) &&(
+            (warehouseBatches.length > 0 || savedAllocations.length > 0) && (
               //------- Batch Allocations Section --------- //
               <>
                 <Divider />
@@ -3715,7 +3784,9 @@ const handlePrint = () => {
                                     message.success("Deleted");
 
                                     // 🔥 refresh both
-                                    await fetchSavedAllocations(selectedProduct);
+                                    await fetchSavedAllocations(
+                                      selectedProduct,
+                                    );
                                     await loadWarehouseBatches(
                                       selectedWarehouse,
                                     );
