@@ -1561,6 +1561,9 @@
 //   );
 // }
 
+
+
+
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
@@ -1703,8 +1706,8 @@ export default function YearEndPage() {
   const selectedProductRef = useRef(null);
 
   useEffect(() => {
-  selectedProductRef.current = selectedProduct;
-}, [selectedProduct]);
+    selectedProductRef.current = selectedProduct;
+  }, [selectedProduct]);
 
   const tabLabel = (text, count) => (
     <div style={{ display: "flex", gap: 6 }}>
@@ -1838,99 +1841,50 @@ export default function YearEndPage() {
     }
   };
 
-  // useEffect(() => {
-  //   if (!isLoggedIn || !cycleId) return;
-
-  //   const interval = setInterval(() => {
-  //     fetchInventory(); // 🔥 refresh data
-  //   }, 5000); // every 5 seconds
-
-  //   return () => clearInterval(interval);
-  // }, [isLoggedIn, cycleId]);
 
 
 
 
+  const refreshTimeout = useRef(null);
 
-  // useEffect(() => {
-  //   if (!isLoggedIn || !cycleId) return;
+  useEffect(() => {
+    if (!isLoggedIn || !cycleId) return;
 
-  //   const channel = supabase
-  //     .channel("cycle-items-realtime")
-  //     .on(
-  //       "postgres_changes",
-  //       {
-  //         event: "*", // INSERT, UPDATE, DELETE
-  //         schema: "public",
-  //         table: "cycle_items",
-  //         filter: `cycle_id=eq.${cycleId}`, // 🎯 IMPORTANT (only this cycle)
-  //       },
-  //       (payload) => {
-  //         console.log("🔄 Realtime change:", payload);
+    const channel = supabase
+      .channel(`cycle-items-${cycleId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "cycle_items",
+          filter: `cycle_id=eq.${cycleId}`,
+        },
+        (payload) => {
+          console.log("🔄 Realtime change:", payload);
 
-  //         // 🔥 IMPORTANT: Avoid interrupting user input
-  //         const isUserEditing = !!selectedProduct;
+          if (selectedProductRef.current) {
+            console.log("⏸ Skipped (editing)");
+            return;
+          }
 
-  //         if (isUserEditing) {
-  //           console.log("⏸ Skipped refresh (user editing)");
-  //           return;
-  //         }
+          // ✅ DEBOUNCE START
+          if (refreshTimeout.current) {
+            clearTimeout(refreshTimeout.current);
+          }
 
-  //         // ✅ Soft refresh
-  //         fetchInventory();
-  //       },
-  //     )
-  //     .subscribe();
-
-  //   return () => {
-  //     supabase.removeChannel(channel);
-  //   };
-  // }, [isLoggedIn, cycleId, selectedProduct]);
-
-
-
-
-
-const refreshTimeout = useRef(null);
-
-useEffect(() => {
-  if (!isLoggedIn || !cycleId) return;
-
-  const channel = supabase
-    .channel(`cycle-items-${cycleId}`)
-    .on(
-      "postgres_changes",
-      {
-        event: "*",
-        schema: "public",
-        table: "cycle_items",
-        filter: `cycle_id=eq.${cycleId}`,
-      },
-      (payload) => {
-        console.log("🔄 Realtime change:", payload);
-
-        if (selectedProductRef.current) {
-          console.log("⏸ Skipped (editing)");
-          return;
+          refreshTimeout.current = setTimeout(() => {
+            console.log("🚀 Fetching once after burst...");
+            fetchInventory();
+          }, 500); // wait 500ms for all events
         }
+      )
+      .subscribe();
 
-        // ✅ DEBOUNCE START
-        if (refreshTimeout.current) {
-          clearTimeout(refreshTimeout.current);
-        }
-
-        refreshTimeout.current = setTimeout(() => {
-          console.log("🚀 Fetching once after burst...");
-          fetchInventory();
-        }, 500); // wait 500ms for all events
-      }
-    )
-    .subscribe();
-
-  return () => {
-    supabase.removeChannel(channel);
-  };
-}, [isLoggedIn, cycleId]);
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [isLoggedIn, cycleId]);
 
 
 
@@ -1971,11 +1925,22 @@ useEffect(() => {
   useEffect(() => {
     if (!selectedProduct) return;
 
-    const relevantUnits = (selectedProduct.systemUnits || []).filter(
-      (u) =>
-        Number(u.sys_quantity || 0) > 0 &&
-        (u.status !== "submitted" || Number(u.count_quantity || 0) > 0),
-    );
+    // const relevantUnits = (selectedProduct.systemUnits || []).filter(
+    //   (u) =>
+    //     Number(u.sys_quantity || 0) > 0 &&
+    //     (u.status !== "submitted" || Number(u.count_quantity || 0) > 0),
+    // );
+
+
+
+    const relevantUnits = (selectedProduct.systemUnits || []).filter((u) => {
+      // 🚀 ONLY block zero sys_quantity in PENDING tab
+      if (activeTab === "pending") {
+        if (Number(u.sys_quantity || 0) === 0) return false;
+      }
+
+      return true;
+    });
 
     const pendingUnits = relevantUnits.filter(
       (u) =>
@@ -2005,6 +1970,13 @@ useEffect(() => {
         status: unit.status,
       })),
     );
+
+
+
+
+
+
+
   }, [selectedProduct, activeTab]); // ✅ ALWAYS SAME LENGTH
 
   const totals = useMemo(() => {
@@ -2238,6 +2210,11 @@ useEffect(() => {
             Number(u.count_quantity || 0) !== Number(u.sys_quantity || 0),
         ),
       ).length,
+
+      verified: products.filter((p) =>
+        p.systemUnits.some((u) => u.status === "verified"),
+      ).length,
+
     };
   }, [products]);
 
@@ -2266,7 +2243,12 @@ useEffect(() => {
             Number(u.count_quantity || 0) !== Number(u.sys_quantity || 0),
         ),
       );
-    } else {
+    } else if (activeTab === "verified") {
+      data = products.filter((p) =>
+        p.systemUnits.some((u) => u.status === "verified"),
+      );
+    }
+    else {
       data = [];
     }
 
@@ -2405,7 +2387,7 @@ useEffect(() => {
           // Mark as finished if remaining will be 0
           finished:
             Number(b.available_qty) -
-              ((b.allocations?.reduce((s, a) => s + a.qty, 0) || 0) + qty) ===
+            ((b.allocations?.reduce((s, a) => s + a.qty, 0) || 0) + qty) ===
             0,
         };
       }),
@@ -2908,7 +2890,7 @@ useEffect(() => {
             )}
           </Row>
           <Row gutter={24}>
-            <Col span={10} className="no-print">
+            <Col span={12} className="no-print">
               <Input
                 placeholder="Search item..."
                 allowClear
@@ -2938,7 +2920,8 @@ useEffect(() => {
                     key === "pending" ||
                     key === "submitted" ||
                     key === "recount" ||
-                    key === "editable"
+                    key === "editable" ||
+                    key === "verified"
                   ) {
                     await fetchInventory();
                   }
@@ -3016,6 +2999,19 @@ useEffect(() => {
                           color="yellow"
                           overflowCount={999999}
                         ></Badge>
+                      </span>
+                    ),
+                  },
+                  {
+                    key: "verified",
+                    label: (
+                      <span>
+                        Verified{" "}
+                        <Badge
+                          count={tabCounts.verified}
+                          color="cyan"
+                          overflowCount={999999}
+                        />
                       </span>
                     ),
                   },
@@ -3104,7 +3100,7 @@ useEffect(() => {
               />
             </Col>
 
-            <Col span={14} className="thermal-slip">
+            <Col span={12} className="thermal-slip">
               {selectedProduct ? (
                 <div>
                   <div
@@ -3537,7 +3533,7 @@ useEffect(() => {
                                           : "pointer",
                                         border:
                                           selectedBatch?.batch_no ===
-                                          batch.batch_no
+                                            batch.batch_no
                                             ? "2px solid #1677ff"
                                             : "1px solid #e5e7eb",
                                       }}
@@ -3676,17 +3672,17 @@ useEffect(() => {
                                     getRemainingQty(
                                       selectedBatch?.batch_no,
                                     ) && (
-                                    <div
-                                      style={{
-                                        color: "#ff4d4f",
-                                        fontSize: "11px",
-                                        marginTop: "4px",
-                                      }}
-                                    >
-                                      Max:{" "}
-                                      {getRemainingQty(selectedBatch?.batch_no)}
-                                    </div>
-                                  )}
+                                      <div
+                                        style={{
+                                          color: "#ff4d4f",
+                                          fontSize: "11px",
+                                          marginTop: "4px",
+                                        }}
+                                      >
+                                        Max:{" "}
+                                        {getRemainingQty(selectedBatch?.batch_no)}
+                                      </div>
+                                    )}
                                 </Col>
 
                                 <Col span={3}>
@@ -3697,7 +3693,7 @@ useEffect(() => {
                                     disabled={
                                       !allocationForm.qty ||
                                       allocationForm.qty >
-                                        getRemainingQty(selectedBatch?.batch_no)
+                                      getRemainingQty(selectedBatch?.batch_no)
                                     }
                                   ></Button>
                                 </Col>
