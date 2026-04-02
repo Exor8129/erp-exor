@@ -404,8 +404,8 @@ This action cannot be undone.`,
           (s, u) => s + Number(u.count_quantity || 0),
           0,
         );
-
-        const diff = count + (r.complaintQty || 0) - sys;
+        const adjustedSys = Math.abs(sys);
+        const diff = count + (r.complaintQty || 0) - adjustedSys;
 
         return <Text type={getValueColor(diff)}>{diff}</Text>;
       },
