@@ -1957,11 +1957,14 @@ export default function YearEndPage() {
   useEffect(() => {
     if (!selectedProduct) return;
 
-    const relevantUnits = (selectedProduct.systemUnits || []).filter(
-      (u) =>
-        Number(u.sys_quantity || 0) > 0 &&
-        (u.status !== "submitted" || Number(u.count_quantity || 0) > 0),
-    );
+    const relevantUnits = (selectedProduct.systemUnits || []).filter((u) => {
+      // 🚀 ONLY block zero sys_quantity in PENDING tab
+      if (activeTab === "pending") {
+        if (Number(u.sys_quantity || 0) === 0) return false;
+      }
+
+      return true;
+    });
 
     const pendingUnits = relevantUnits.filter(
       (u) =>
@@ -2228,6 +2231,11 @@ export default function YearEndPage() {
             Number(u.count_quantity || 0) !== Number(u.sys_quantity || 0),
         ),
       ).length,
+
+      verified: products.filter((p) =>
+        p.systemUnits.some((u) => u.status === "verified"),
+      ).length,
+
     };
   }, [products]);
 
@@ -2256,7 +2264,13 @@ export default function YearEndPage() {
             Number(u.count_quantity || 0) !== Number(u.sys_quantity || 0),
         ),
       );
-    } else {
+    }
+    else if (activeTab === "verified") {
+      data = products.filter((p) =>
+        p.systemUnits.some((u) => u.status === "verified"),
+      );
+    }
+    else {
       data = [];
     }
 
@@ -2395,7 +2409,7 @@ export default function YearEndPage() {
           // Mark as finished if remaining will be 0
           finished:
             Number(b.available_qty) -
-              ((b.allocations?.reduce((s, a) => s + a.qty, 0) || 0) + qty) ===
+            ((b.allocations?.reduce((s, a) => s + a.qty, 0) || 0) + qty) ===
             0,
         };
       }),
@@ -2609,313 +2623,313 @@ export default function YearEndPage() {
   ///////////////CODE FOR PRINTING SLIP (STARTS) //////////////
   /////////////////////////////////////////////////////////////
 
-//   const handlePrint = () => {
-//     if (!selectedProduct) {
-//       message.warning("No data to print");
-//       return;
-//     }
+  //   const handlePrint = () => {
+  //     if (!selectedProduct) {
+  //       message.warning("No data to print");
+  //       return;
+  //     }
 
-//     const printWindow = window.open("", "_blank");
+  //     const printWindow = window.open("", "_blank");
 
-//     // ✅ 1. GET SUBMITTED DATA (HISTORY)
-//     const submittedRows = Object.values(
-//       (selectedProduct?.systemUnits || [])
-//         .filter((u) => {
-//           const isSubmitted = u.status === "submitted";
-//           const hasQty = Number(u.count_quantity) > 0;
-//           return isSubmitted && hasQty;
-//         })
-//         .reduce((acc, u) => {
-//           const batch = u.count_batch_no || u.count_serial_no || "-";
-//           const qty = Number(u.count_quantity) || 0;
+  //     // ✅ 1. GET SUBMITTED DATA (HISTORY)
+  //     const submittedRows = Object.values(
+  //       (selectedProduct?.systemUnits || [])
+  //         .filter((u) => {
+  //           const isSubmitted = u.status === "submitted";
+  //           const hasQty = Number(u.count_quantity) > 0;
+  //           return isSubmitted && hasQty;
+  //         })
+  //         .reduce((acc, u) => {
+  //           const batch = u.count_batch_no || u.count_serial_no || "-";
+  //           const qty = Number(u.count_quantity) || 0;
 
-          
 
-//           if (!acc[batch]) {
-//             acc[batch] = {
-//               batch_no: batch,
-//               quantity: 0,
-//               expiry_date: u.count_expiry_date,
-//               mrp: u.mrp ?? "-",
-//               counted_by: new Set(), // ✅ FIX
-//             };
-//           }
 
-//           acc[batch].quantity += qty;
+  //           if (!acc[batch]) {
+  //             acc[batch] = {
+  //               batch_no: batch,
+  //               quantity: 0,
+  //               expiry_date: u.count_expiry_date,
+  //               mrp: u.mrp ?? "-",
+  //               counted_by: new Set(), // ✅ FIX
+  //             };
+  //           }
 
-//           const teamName = u.teams?.team_leader
-//             ? `${u.teams.team_leader} (${u.teams.username})`
-//             : u.teams?.[0]?.team_leader
-//               ? `${u.teams[0].team_leader} (${u.teams[0].username})`
-//               : null;
+  //           acc[batch].quantity += qty;
 
-//           if (teamName) {
-//             acc[batch].counted_by.add(teamName);
-//           }
+  //           const teamName = u.teams?.team_leader
+  //             ? `${u.teams.team_leader} (${u.teams.username})`
+  //             : u.teams?.[0]?.team_leader
+  //               ? `${u.teams[0].team_leader} (${u.teams[0].username})`
+  //               : null;
 
-//           return acc;
-//         }, {}),
-//     ).map((row) => ({
-//       ...row,
-//       counted_by: Array.from(row.counted_by).join(", ") || "-", // ✅ FIX
-//     }));
+  //           if (teamName) {
+  //             acc[batch].counted_by.add(teamName);
+  //           }
 
-//     // ✅ 2. NORMALIZE NEW ENTRIES
-//     const newRows = (countingUnits || []).map((u) => ({
-//       batch_no: u.batch_no || "-",
-//       expiry_date: u.expiry_date,
-//       mrp: u.mrp ?? "-",
-//       quantity: u.quantity ?? "-",
-//       counted_by: u.team_name || "-",
-//     }));
+  //           return acc;
+  //         }, {}),
+  //     ).map((row) => ({
+  //       ...row,
+  //       counted_by: Array.from(row.counted_by).join(", ") || "-", // ✅ FIX
+  //     }));
 
-//     // ✅ 3. MERGE BOTH
-//     const allRows = [...submittedRows, ...newRows];
+  //     // ✅ 2. NORMALIZE NEW ENTRIES
+  //     const newRows = (countingUnits || []).map((u) => ({
+  //       batch_no: u.batch_no || "-",
+  //       expiry_date: u.expiry_date,
+  //       mrp: u.mrp ?? "-",
+  //       quantity: u.quantity ?? "-",
+  //       counted_by: u.team_name || "-",
+  //     }));
 
-//     if (allRows.length === 0) {
-//       message.warning("No data to print");
-//       return;
-//     }
+  //     // ✅ 3. MERGE BOTH
+  //     const allRows = [...submittedRows, ...newRows];
 
-//     console.log("FINAL PRINT DATA:", allRows);
+  //     if (allRows.length === 0) {
+  //       message.warning("No data to print");
+  //       return;
+  //     }
 
-//     // ✅ 4. TOTAL QTY
-//     const totalQty = allRows.reduce(
-//       (sum, r) => sum + Number(r.quantity || 0),
-//       0,
-//     );
+  //     console.log("FINAL PRINT DATA:", allRows);
 
-//     // ✅ 5. GENERATE DATA ROWS
-//     const rows = allRows
-//       .map((u, i) => {
-//         const batch = u.batch_no || "-";
-//         const expiry = u.expiry_date
-//           ? dayjs(u.expiry_date).format("DD-MM-YYYY")
-//           : "-";
-//         const mrp = u.mrp ?? "-";
-//         const qty = u.quantity ?? "-";
+  //     // ✅ 4. TOTAL QTY
+  //     const totalQty = allRows.reduce(
+  //       (sum, r) => sum + Number(r.quantity || 0),
+  //       0,
+  //     );
 
-//         return `
-//         <tr>
-//           <td>${i + 1}</td>
-//           <td>${batch}</td>
-//           <td>${expiry}</td>
-//           <td>${mrp}</td>
-//           <td>${qty}</td>
-//           <td>${u.counted_by || "-"}</td>
-//         </tr>
-//       `;
-//       })
-//       .join("");
+  //     // ✅ 5. GENERATE DATA ROWS
+  //     const rows = allRows
+  //       .map((u, i) => {
+  //         const batch = u.batch_no || "-";
+  //         const expiry = u.expiry_date
+  //           ? dayjs(u.expiry_date).format("DD-MM-YYYY")
+  //           : "-";
+  //         const mrp = u.mrp ?? "-";
+  //         const qty = u.quantity ?? "-";
 
-//     // ✅ 6. AUTO BLANK ROWS (FIT PAGE)
-//     const maxRowsPerPage = 20; // 🔥 adjust once based on printer
-//     const blankRowCount = Math.max(0, maxRowsPerPage - allRows.length - 1); // -1 for total row
+  //         return `
+  //         <tr>
+  //           <td>${i + 1}</td>
+  //           <td>${batch}</td>
+  //           <td>${expiry}</td>
+  //           <td>${mrp}</td>
+  //           <td>${qty}</td>
+  //           <td>${u.counted_by || "-"}</td>
+  //         </tr>
+  //       `;
+  //       })
+  //       .join("");
 
-//     const blankRows = Array.from({ length: blankRowCount })
-//       .map(
-//         () => `
-//         <tr>
-//           <td>&nbsp;</td>
-//           <td></td>
-//           <td></td>
-//           <td></td>
-//           <td></td>
-//           <td></td>
-//         </tr>
-//       `,
-//       )
-//       .join("");
+  //     // ✅ 6. AUTO BLANK ROWS (FIT PAGE)
+  //     const maxRowsPerPage = 20; // 🔥 adjust once based on printer
+  //     const blankRowCount = Math.max(0, maxRowsPerPage - allRows.length - 1); // -1 for total row
 
-//     // ✅ 7. TOTAL ROW
-//     const totalRow = `
-//     <tr>
-//       <td colspan="5" style="text-align:right; font-weight:bold;">
-//         TOTAL
-//       </td>
-//       <td style="font-weight:bold;">
-//         ${totalQty || " "}
-//       </td>
-//     </tr>
-//   `;
+  //     const blankRows = Array.from({ length: blankRowCount })
+  //       .map(
+  //         () => `
+  //         <tr>
+  //           <td>&nbsp;</td>
+  //           <td></td>
+  //           <td></td>
+  //           <td></td>
+  //           <td></td>
+  //           <td></td>
+  //         </tr>
+  //       `,
+  //       )
+  //       .join("");
 
-//     // ✅ SYSTEM STOCK TOTAL (sum of all batches)
-//     const systemStockTotal = (selectedProduct?.systemUnits || []).reduce(
-//       (sum, u) => sum + Number(u.sys_quantity || 0),
-//       0,
-//     );
+  //     // ✅ 7. TOTAL ROW
+  //     const totalRow = `
+  //     <tr>
+  //       <td colspan="5" style="text-align:right; font-weight:bold;">
+  //         TOTAL
+  //       </td>
+  //       <td style="font-weight:bold;">
+  //         ${totalQty || " "}
+  //       </td>
+  //     </tr>
+  //   `;
 
-//     // ✅ 8. HTML TEMPLATE
-//     const html = `
-// <html>
-// <head>
-// <style>
-//   @page { size: A6; margin: 0; }
+  //     // ✅ SYSTEM STOCK TOTAL (sum of all batches)
+  //     const systemStockTotal = (selectedProduct?.systemUnits || []).reduce(
+  //       (sum, u) => sum + Number(u.sys_quantity || 0),
+  //       0,
+  //     );
 
-//   body {
-//     font-family: Arial;
-//     margin: 0;
-//   }
+  //     // ✅ 8. HTML TEMPLATE
+  //     const html = `
+  // <html>
+  // <head>
+  // <style>
+  //   @page { size: A6; margin: 0; }
 
-//   .page {
-//     padding: 5mm;
-//   }
+  //   body {
+  //     font-family: Arial;
+  //     margin: 0;
+  //   }
 
-//   .header {
-//     margin-bottom: 6px;
-//     font-size: 11pt;
-//   }
+  //   .page {
+  //     padding: 5mm;
+  //   }
 
-//   .table {
-//     width: 100%;
-//     border-collapse: collapse;
-//     font-size: 9pt;
-//   }
+  //   .header {
+  //     margin-bottom: 6px;
+  //     font-size: 11pt;
+  //   }
 
-//   .table th,
-//   .table td {
-//     border: .1px solid #808080;
-//     padding: 3px;
-//     text-align: left;
-//   }
+  //   .table {
+  //     width: 100%;
+  //     border-collapse: collapse;
+  //     font-size: 9pt;
+  //   }
 
-//   .table th {
-//     background: #f0f0f0;
-//   }
+  //   .table th,
+  //   .table td {
+  //     border: .1px solid #808080;
+  //     padding: 3px;
+  //     text-align: left;
+  //   }
 
-//   .total-row td {
-//     border-top: 1px solid #000;
-//   }
-// </style>
-// </head>
+  //   .table th {
+  //     background: #f0f0f0;
+  //   }
 
-// <body>
-//   <div class="page">
+  //   .total-row td {
+  //     border-top: 1px solid #000;
+  //   }
+  // </style>
+  // </head>
 
-//     <div class="header">
-//       <div><b>SL No:</b> ${selectedProduct.sl_no}</div>
-//       <div><b>Item:</b> ${selectedProduct.item_name}</div>
-//       <div><b>System Stock:</b> ${systemStockTotal}</div>
-//     </div>
+  // <body>
+  //   <div class="page">
 
-//     <table class="table">
-//       <thead>
-//         <tr>
-//           <th>#</th>
-//           <th>Batch</th>
-//           <th>Expiry</th>
-//           <th>MRP</th>
-//           <th>Qty</th>
-//           <th>Team</th>
-//         </tr>
-//       </thead>
+  //     <div class="header">
+  //       <div><b>SL No:</b> ${selectedProduct.sl_no}</div>
+  //       <div><b>Item:</b> ${selectedProduct.item_name}</div>
+  //       <div><b>System Stock:</b> ${systemStockTotal}</div>
+  //     </div>
 
-//       <tbody>
-//         ${rows}
-//         ${blankRows}
-//         ${totalRow}
-//       </tbody>
-//     </table>
+  //     <table class="table">
+  //       <thead>
+  //         <tr>
+  //           <th>#</th>
+  //           <th>Batch</th>
+  //           <th>Expiry</th>
+  //           <th>MRP</th>
+  //           <th>Qty</th>
+  //           <th>Team</th>
+  //         </tr>
+  //       </thead>
 
-//   </div>
-// </body>
-// </html>
-// `;
+  //       <tbody>
+  //         ${rows}
+  //         ${blankRows}
+  //         ${totalRow}
+  //       </tbody>
+  //     </table>
 
-//     printWindow.document.write(html);
-//     printWindow.document.close();
+  //   </div>
+  // </body>
+  // </html>
+  // `;
 
-//     setTimeout(() => {
-//       printWindow.print();
-//       printWindow.close();
-//     }, 500);
-//   };
+  //     printWindow.document.write(html);
+  //     printWindow.document.close();
 
-const handlePrint = () => {
-  if (!selectedProduct) {
-    message.warning("No data to print");
-    return;
-  }
+  //     setTimeout(() => {
+  //       printWindow.print();
+  //       printWindow.close();
+  //     }, 500);
+  //   };
 
-  const printWindow = window.open("", "_blank");
+  const handlePrint = () => {
+    if (!selectedProduct) {
+      message.warning("No data to print");
+      return;
+    }
 
-  // ✅ 1. GET SUBMITTED DATA (SEPARATE ROW PER TEAM)
-  const submittedMap = (selectedProduct?.systemUnits || [])
-    .filter((u) => {
-      const isSubmitted = u.status === "submitted";
-      const hasQty = Number(u.count_quantity) > 0;
-      return isSubmitted && hasQty;
-    })
-    .reduce((acc, u) => {
-      const batch = u.count_batch_no || u.count_serial_no || "-";
-      const qty = Number(u.count_quantity) || 0;
+    const printWindow = window.open("", "_blank");
 
-      // ✅ Team extraction (SAFE)
-      const teamName = u.teams?.team_leader
-        ? `${u.teams.team_leader} (${u.teams.username})`
-        : u.teams?.[0]?.team_leader
-        ? `${u.teams[0].team_leader} (${u.teams[0].username})`
-        : "-";
+    // ✅ 1. GET SUBMITTED DATA (SEPARATE ROW PER TEAM)
+    const submittedMap = (selectedProduct?.systemUnits || [])
+      .filter((u) => {
+        const isSubmitted = u.status === "submitted";
+        const hasQty = Number(u.count_quantity) > 0;
+        return isSubmitted && hasQty;
+      })
+      .reduce((acc, u) => {
+        const batch = u.count_batch_no || u.count_serial_no || "-";
+        const qty = Number(u.count_quantity) || 0;
 
-      // 🔥 KEY: batch + team
-      const key = `${batch}__${teamName}`;
+        // ✅ Team extraction (SAFE)
+        const teamName = u.teams?.team_leader
+          ? `${u.teams.team_leader} (${u.teams.username})`
+          : u.teams?.[0]?.team_leader
+            ? `${u.teams[0].team_leader} (${u.teams[0].username})`
+            : "-";
 
-      if (!acc[key]) {
-        acc[key] = {
-          batch_no: batch,
-          quantity: 0,
-          expiry_date: u.count_expiry_date,
-          mrp: u.mrp ?? "-",
-          counted_by: teamName,
-        };
-      }
+        // 🔥 KEY: batch + team
+        const key = `${batch}__${teamName}`;
 
-      acc[key].quantity += qty;
+        if (!acc[key]) {
+          acc[key] = {
+            batch_no: batch,
+            quantity: 0,
+            expiry_date: u.count_expiry_date,
+            mrp: u.mrp ?? "-",
+            counted_by: teamName,
+          };
+        }
 
-      return acc;
-    }, {});
+        acc[key].quantity += qty;
 
-  const submittedRows = Object.values(submittedMap);
+        return acc;
+      }, {});
 
-  // ✅ 2. NORMALIZE NEW ENTRIES
-  const newRows = (countingUnits || []).map((u) => ({
-    batch_no: u.batch_no || "-",
-    expiry_date: u.expiry_date,
-    mrp: u.mrp ?? "-",
-    quantity: Number(u.quantity) || 0, // ✅ FIXED
-    counted_by:
-      u.team_leader && u.username
-        ? `${u.team_leader} (${u.username})`
-        : u.team_name || "-",
-  }));
+    const submittedRows = Object.values(submittedMap);
 
-  // ✅ 3. MERGE BOTH
-  const allRows = [...submittedRows, ...newRows];
+    // ✅ 2. NORMALIZE NEW ENTRIES
+    const newRows = (countingUnits || []).map((u) => ({
+      batch_no: u.batch_no || "-",
+      expiry_date: u.expiry_date,
+      mrp: u.mrp ?? "-",
+      quantity: Number(u.quantity) || 0, // ✅ FIXED
+      counted_by:
+        u.team_leader && u.username
+          ? `${u.team_leader} (${u.username})`
+          : u.team_name || "-",
+    }));
 
-  if (allRows.length === 0) {
-    message.warning("No data to print");
-    return;
-  }
+    // ✅ 3. MERGE BOTH
+    const allRows = [...submittedRows, ...newRows];
 
-  console.log("FINAL PRINT DATA:", allRows);
+    if (allRows.length === 0) {
+      message.warning("No data to print");
+      return;
+    }
 
-  // ✅ 4. TOTAL QTY (SAFE)
-  const totalQty = allRows.reduce(
-    (sum, r) => sum + (isNaN(Number(r.quantity)) ? 0 : Number(r.quantity)),
-    0
-  );
+    console.log("FINAL PRINT DATA:", allRows);
 
-  // ✅ 5. GENERATE DATA ROWS
-  const rows = allRows
-    .map((u, i) => {
-      const batch = u.batch_no || "-";
-      const expiry = u.expiry_date
-        ? dayjs(u.expiry_date).format("DD-MM-YYYY")
-        : "-";
-      const mrp = u.mrp ?? "-";
-      const qty = u.quantity === 0 ? "" : u.quantity;
+    // ✅ 4. TOTAL QTY (SAFE)
+    const totalQty = allRows.reduce(
+      (sum, r) => sum + (isNaN(Number(r.quantity)) ? 0 : Number(r.quantity)),
+      0
+    );
 
-      return `
+    // ✅ 5. GENERATE DATA ROWS
+    const rows = allRows
+      .map((u, i) => {
+        const batch = u.batch_no || "-";
+        const expiry = u.expiry_date
+          ? dayjs(u.expiry_date).format("DD-MM-YYYY")
+          : "-";
+        const mrp = u.mrp ?? "-";
+        const qty = u.quantity === 0 ? "" : u.quantity;
+
+        return `
         <tr>
           <td>${i + 1}</td>
           <td>${batch}</td>
@@ -2925,16 +2939,16 @@ const handlePrint = () => {
           <td>${u.counted_by || "-"}</td>
         </tr>
       `;
-    })
-    .join("");
+      })
+      .join("");
 
-  // ✅ 6. AUTO BLANK ROWS
-  const maxRowsPerPage = 20;
-  const blankRowCount = Math.max(0, maxRowsPerPage - allRows.length - 1);
+    // ✅ 6. AUTO BLANK ROWS
+    const maxRowsPerPage = 20;
+    const blankRowCount = Math.max(0, maxRowsPerPage - allRows.length - 1);
 
-  const blankRows = Array.from({ length: blankRowCount })
-    .map(
-      () => `
+    const blankRows = Array.from({ length: blankRowCount })
+      .map(
+        () => `
       <tr>
         <td>&nbsp;</td>
         <td></td>
@@ -2944,11 +2958,11 @@ const handlePrint = () => {
         <td></td>
       </tr>
     `
-    )
-    .join("");
+      )
+      .join("");
 
-  // ✅ 7. TOTAL ROW
-  const totalRow = `
+    // ✅ 7. TOTAL ROW
+    const totalRow = `
     <tr>
       <td colspan="5" style="text-align:right; font-weight:bold;">
         TOTAL
@@ -2959,14 +2973,14 @@ const handlePrint = () => {
     </tr>
   `;
 
-  // ✅ SYSTEM STOCK TOTAL
-  const systemStockTotal = (selectedProduct?.systemUnits || []).reduce(
-    (sum, u) => sum + Number(u.sys_quantity || 0),
-    0
-  );
+    // ✅ SYSTEM STOCK TOTAL
+    const systemStockTotal = (selectedProduct?.systemUnits || []).reduce(
+      (sum, u) => sum + Number(u.sys_quantity || 0),
+      0
+    );
 
-  // ✅ 8. HTML TEMPLATE
-  const html = `
+    // ✅ 8. HTML TEMPLATE
+    const html = `
 <html>
 <head>
 <style>
@@ -3038,14 +3052,14 @@ const handlePrint = () => {
 </html>
 `;
 
-  printWindow.document.write(html);
-  printWindow.document.close();
+    printWindow.document.write(html);
+    printWindow.document.close();
 
-  setTimeout(() => {
-    printWindow.print();
-    printWindow.close();
-  }, 500);
-};
+    setTimeout(() => {
+      printWindow.print();
+      printWindow.close();
+    }, 500);
+  };
 
 
   /////////////////////////////////////////////////////////////
@@ -3143,7 +3157,7 @@ const handlePrint = () => {
             )}
           </Row>
           <Row gutter={24}>
-            <Col span={10} className="no-print">
+            <Col span={12} className="no-print">
               <Input
                 placeholder="Search item..."
                 allowClear
@@ -3254,6 +3268,19 @@ const handlePrint = () => {
                       </span>
                     ),
                   },
+                  {
+                    key: "verified",
+                    label: (
+                      <span>
+                        Verified{" "}
+                        <Badge
+                          count={tabCounts.verified}
+                          color="cyan"
+                          overflowCount={999999}
+                        />
+                      </span>
+                    ),
+                  },
                 ]}
               />
               <Table
@@ -3339,7 +3366,7 @@ const handlePrint = () => {
               />
             </Col>
 
-            <Col span={14} className="thermal-slip">
+            <Col span={12} className="thermal-slip">
               {selectedProduct ? (
                 <div>
                   <div
@@ -3772,7 +3799,7 @@ const handlePrint = () => {
                                           : "pointer",
                                         border:
                                           selectedBatch?.batch_no ===
-                                          batch.batch_no
+                                            batch.batch_no
                                             ? "2px solid #1677ff"
                                             : "1px solid #e5e7eb",
                                       }}
@@ -3911,17 +3938,17 @@ const handlePrint = () => {
                                     getRemainingQty(
                                       selectedBatch?.batch_no,
                                     ) && (
-                                    <div
-                                      style={{
-                                        color: "#ff4d4f",
-                                        fontSize: "11px",
-                                        marginTop: "4px",
-                                      }}
-                                    >
-                                      Max:{" "}
-                                      {getRemainingQty(selectedBatch?.batch_no)}
-                                    </div>
-                                  )}
+                                      <div
+                                        style={{
+                                          color: "#ff4d4f",
+                                          fontSize: "11px",
+                                          marginTop: "4px",
+                                        }}
+                                      >
+                                        Max:{" "}
+                                        {getRemainingQty(selectedBatch?.batch_no)}
+                                      </div>
+                                    )}
                                 </Col>
 
                                 <Col span={3}>
@@ -3932,7 +3959,7 @@ const handlePrint = () => {
                                     disabled={
                                       !allocationForm.qty ||
                                       allocationForm.qty >
-                                        getRemainingQty(selectedBatch?.batch_no)
+                                      getRemainingQty(selectedBatch?.batch_no)
                                     }
                                   ></Button>
                                 </Col>
