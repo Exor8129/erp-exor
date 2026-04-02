@@ -1703,8 +1703,8 @@ export default function YearEndPage() {
   const selectedProductRef = useRef(null);
 
   useEffect(() => {
-  selectedProductRef.current = selectedProduct;
-}, [selectedProduct]);
+    selectedProductRef.current = selectedProduct;
+  }, [selectedProduct]);
 
   const tabLabel = (text, count) => (
     <div style={{ display: "flex", gap: 6 }}>
@@ -1848,10 +1848,6 @@ export default function YearEndPage() {
   //   return () => clearInterval(interval);
   // }, [isLoggedIn, cycleId]);
 
-
-
-
-
   // useEffect(() => {
   //   if (!isLoggedIn || !cycleId) return;
 
@@ -1887,56 +1883,46 @@ export default function YearEndPage() {
   //   };
   // }, [isLoggedIn, cycleId, selectedProduct]);
 
+  const refreshTimeout = useRef(null);
 
+  useEffect(() => {
+    if (!isLoggedIn || !cycleId) return;
 
+    const channel = supabase
+      .channel(`cycle-items-${cycleId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "cycle_items",
+          filter: `cycle_id=eq.${cycleId}`,
+        },
+        (payload) => {
+          console.log("🔄 Realtime change:", payload);
 
+          if (selectedProductRef.current) {
+            console.log("⏸ Skipped (editing)");
+            return;
+          }
 
-const refreshTimeout = useRef(null);
+          // ✅ DEBOUNCE START
+          if (refreshTimeout.current) {
+            clearTimeout(refreshTimeout.current);
+          }
 
-useEffect(() => {
-  if (!isLoggedIn || !cycleId) return;
+          refreshTimeout.current = setTimeout(() => {
+            console.log("🚀 Fetching once after burst...");
+            fetchInventory();
+          }, 500); // wait 500ms for all events
+        },
+      )
+      .subscribe();
 
-  const channel = supabase
-    .channel(`cycle-items-${cycleId}`)
-    .on(
-      "postgres_changes",
-      {
-        event: "*",
-        schema: "public",
-        table: "cycle_items",
-        filter: `cycle_id=eq.${cycleId}`,
-      },
-      (payload) => {
-        console.log("🔄 Realtime change:", payload);
-
-        if (selectedProductRef.current) {
-          console.log("⏸ Skipped (editing)");
-          return;
-        }
-
-        // ✅ DEBOUNCE START
-        if (refreshTimeout.current) {
-          clearTimeout(refreshTimeout.current);
-        }
-
-        refreshTimeout.current = setTimeout(() => {
-          console.log("🚀 Fetching once after burst...");
-          fetchInventory();
-        }, 500); // wait 500ms for all events
-      }
-    )
-    .subscribe();
-
-  return () => {
-    supabase.removeChannel(channel);
-  };
-}, [isLoggedIn, cycleId]);
-
-
-
-
-
-
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [isLoggedIn, cycleId]);
 
   useEffect(() => {
     setMounted(true);
@@ -2049,7 +2035,11 @@ useEffect(() => {
             id,
             item_name
             
-          )
+          ),teams:team_id (
+    id,
+    team_leader,
+    username
+  )
         `,
           )
           .eq("cycle_id", Number(cycleId))
@@ -2619,118 +2609,364 @@ useEffect(() => {
   ///////////////CODE FOR PRINTING SLIP (STARTS) //////////////
   /////////////////////////////////////////////////////////////
 
-  const handlePrint = () => {
-    if (!selectedProduct) {
-      message.warning("No data to print");
-      return;
-    }
+//   const handlePrint = () => {
+//     if (!selectedProduct) {
+//       message.warning("No data to print");
+//       return;
+//     }
 
-    const printWindow = window.open("", "_blank");
+//     const printWindow = window.open("", "_blank");
 
-    // ✅ 1. GET SUBMITTED DATA (HISTORY)
-    const submittedRows = Object.values(
-      (selectedProduct?.systemUnits || [])
-        .filter((u) => {
-          const isSubmitted = u.status === "submitted";
-          const hasQty = Number(u.count_quantity) > 0;
-          return isSubmitted && hasQty;
-        })
-        .reduce((acc, u) => {
-          const batch = u.count_batch_no || u.count_serial_no || "-";
-          const qty = Number(u.count_quantity) || 0;
+//     // ✅ 1. GET SUBMITTED DATA (HISTORY)
+//     const submittedRows = Object.values(
+//       (selectedProduct?.systemUnits || [])
+//         .filter((u) => {
+//           const isSubmitted = u.status === "submitted";
+//           const hasQty = Number(u.count_quantity) > 0;
+//           return isSubmitted && hasQty;
+//         })
+//         .reduce((acc, u) => {
+//           const batch = u.count_batch_no || u.count_serial_no || "-";
+//           const qty = Number(u.count_quantity) || 0;
 
-          if (!acc[batch]) {
-            acc[batch] = {
-              batch_no: batch,
-              quantity: 0,
-              expiry_date: u.count_expiry_date,
-              mrp: u.mrp ?? "-",
-            };
-          }
+          
 
-          acc[batch].quantity += qty;
-          return acc;
-        }, {}),
-    );
+//           if (!acc[batch]) {
+//             acc[batch] = {
+//               batch_no: batch,
+//               quantity: 0,
+//               expiry_date: u.count_expiry_date,
+//               mrp: u.mrp ?? "-",
+//               counted_by: new Set(), // ✅ FIX
+//             };
+//           }
 
-    // ✅ 2. NORMALIZE NEW ENTRIES
-    const newRows = (countingUnits || []).map((u) => ({
-      batch_no: u.batch_no || "-",
-      expiry_date: u.expiry_date,
-      mrp: u.mrp ?? "-",
-      quantity: u.quantity ?? "-",
-    }));
+//           acc[batch].quantity += qty;
 
-    // ✅ 3. MERGE BOTH
-    const allRows = [...submittedRows, ...newRows];
+//           const teamName = u.teams?.team_leader
+//             ? `${u.teams.team_leader} (${u.teams.username})`
+//             : u.teams?.[0]?.team_leader
+//               ? `${u.teams[0].team_leader} (${u.teams[0].username})`
+//               : null;
 
-    if (allRows.length === 0) {
-      message.warning("No data to print");
-      return;
-    }
+//           if (teamName) {
+//             acc[batch].counted_by.add(teamName);
+//           }
 
-    console.log("FINAL PRINT DATA:", allRows);
+//           return acc;
+//         }, {}),
+//     ).map((row) => ({
+//       ...row,
+//       counted_by: Array.from(row.counted_by).join(", ") || "-", // ✅ FIX
+//     }));
 
-    // ✅ 4. TOTAL QTY
-    const totalQty = allRows.reduce(
-      (sum, r) => sum + Number(r.quantity || 0),
-      0,
-    );
+//     // ✅ 2. NORMALIZE NEW ENTRIES
+//     const newRows = (countingUnits || []).map((u) => ({
+//       batch_no: u.batch_no || "-",
+//       expiry_date: u.expiry_date,
+//       mrp: u.mrp ?? "-",
+//       quantity: u.quantity ?? "-",
+//       counted_by: u.team_name || "-",
+//     }));
 
-    // ✅ 5. GENERATE DATA ROWS
-    const rows = allRows
-      .map((u, i) => {
-        const batch = u.batch_no || "-";
-        const expiry = u.expiry_date
-          ? dayjs(u.expiry_date).format("DD-MM-YYYY")
-          : "-";
-        const mrp = u.mrp ?? "-";
-        const qty = u.quantity ?? "-";
+//     // ✅ 3. MERGE BOTH
+//     const allRows = [...submittedRows, ...newRows];
 
-        return `
+//     if (allRows.length === 0) {
+//       message.warning("No data to print");
+//       return;
+//     }
+
+//     console.log("FINAL PRINT DATA:", allRows);
+
+//     // ✅ 4. TOTAL QTY
+//     const totalQty = allRows.reduce(
+//       (sum, r) => sum + Number(r.quantity || 0),
+//       0,
+//     );
+
+//     // ✅ 5. GENERATE DATA ROWS
+//     const rows = allRows
+//       .map((u, i) => {
+//         const batch = u.batch_no || "-";
+//         const expiry = u.expiry_date
+//           ? dayjs(u.expiry_date).format("DD-MM-YYYY")
+//           : "-";
+//         const mrp = u.mrp ?? "-";
+//         const qty = u.quantity ?? "-";
+
+//         return `
+//         <tr>
+//           <td>${i + 1}</td>
+//           <td>${batch}</td>
+//           <td>${expiry}</td>
+//           <td>${mrp}</td>
+//           <td>${qty}</td>
+//           <td>${u.counted_by || "-"}</td>
+//         </tr>
+//       `;
+//       })
+//       .join("");
+
+//     // ✅ 6. AUTO BLANK ROWS (FIT PAGE)
+//     const maxRowsPerPage = 20; // 🔥 adjust once based on printer
+//     const blankRowCount = Math.max(0, maxRowsPerPage - allRows.length - 1); // -1 for total row
+
+//     const blankRows = Array.from({ length: blankRowCount })
+//       .map(
+//         () => `
+//         <tr>
+//           <td>&nbsp;</td>
+//           <td></td>
+//           <td></td>
+//           <td></td>
+//           <td></td>
+//           <td></td>
+//         </tr>
+//       `,
+//       )
+//       .join("");
+
+//     // ✅ 7. TOTAL ROW
+//     const totalRow = `
+//     <tr>
+//       <td colspan="5" style="text-align:right; font-weight:bold;">
+//         TOTAL
+//       </td>
+//       <td style="font-weight:bold;">
+//         ${totalQty || " "}
+//       </td>
+//     </tr>
+//   `;
+
+//     // ✅ SYSTEM STOCK TOTAL (sum of all batches)
+//     const systemStockTotal = (selectedProduct?.systemUnits || []).reduce(
+//       (sum, u) => sum + Number(u.sys_quantity || 0),
+//       0,
+//     );
+
+//     // ✅ 8. HTML TEMPLATE
+//     const html = `
+// <html>
+// <head>
+// <style>
+//   @page { size: A6; margin: 0; }
+
+//   body {
+//     font-family: Arial;
+//     margin: 0;
+//   }
+
+//   .page {
+//     padding: 5mm;
+//   }
+
+//   .header {
+//     margin-bottom: 6px;
+//     font-size: 11pt;
+//   }
+
+//   .table {
+//     width: 100%;
+//     border-collapse: collapse;
+//     font-size: 9pt;
+//   }
+
+//   .table th,
+//   .table td {
+//     border: .1px solid #808080;
+//     padding: 3px;
+//     text-align: left;
+//   }
+
+//   .table th {
+//     background: #f0f0f0;
+//   }
+
+//   .total-row td {
+//     border-top: 1px solid #000;
+//   }
+// </style>
+// </head>
+
+// <body>
+//   <div class="page">
+
+//     <div class="header">
+//       <div><b>SL No:</b> ${selectedProduct.sl_no}</div>
+//       <div><b>Item:</b> ${selectedProduct.item_name}</div>
+//       <div><b>System Stock:</b> ${systemStockTotal}</div>
+//     </div>
+
+//     <table class="table">
+//       <thead>
+//         <tr>
+//           <th>#</th>
+//           <th>Batch</th>
+//           <th>Expiry</th>
+//           <th>MRP</th>
+//           <th>Qty</th>
+//           <th>Team</th>
+//         </tr>
+//       </thead>
+
+//       <tbody>
+//         ${rows}
+//         ${blankRows}
+//         ${totalRow}
+//       </tbody>
+//     </table>
+
+//   </div>
+// </body>
+// </html>
+// `;
+
+//     printWindow.document.write(html);
+//     printWindow.document.close();
+
+//     setTimeout(() => {
+//       printWindow.print();
+//       printWindow.close();
+//     }, 500);
+//   };
+
+const handlePrint = () => {
+  if (!selectedProduct) {
+    message.warning("No data to print");
+    return;
+  }
+
+  const printWindow = window.open("", "_blank");
+
+  // ✅ 1. GET SUBMITTED DATA (SEPARATE ROW PER TEAM)
+  const submittedMap = (selectedProduct?.systemUnits || [])
+    .filter((u) => {
+      const isSubmitted = u.status === "submitted";
+      const hasQty = Number(u.count_quantity) > 0;
+      return isSubmitted && hasQty;
+    })
+    .reduce((acc, u) => {
+      const batch = u.count_batch_no || u.count_serial_no || "-";
+      const qty = Number(u.count_quantity) || 0;
+
+      // ✅ Team extraction (SAFE)
+      const teamName = u.teams?.team_leader
+        ? `${u.teams.team_leader} (${u.teams.username})`
+        : u.teams?.[0]?.team_leader
+        ? `${u.teams[0].team_leader} (${u.teams[0].username})`
+        : "-";
+
+      // 🔥 KEY: batch + team
+      const key = `${batch}__${teamName}`;
+
+      if (!acc[key]) {
+        acc[key] = {
+          batch_no: batch,
+          quantity: 0,
+          expiry_date: u.count_expiry_date,
+          mrp: u.mrp ?? "-",
+          counted_by: teamName,
+        };
+      }
+
+      acc[key].quantity += qty;
+
+      return acc;
+    }, {});
+
+  const submittedRows = Object.values(submittedMap);
+
+  // ✅ 2. NORMALIZE NEW ENTRIES
+  const newRows = (countingUnits || []).map((u) => ({
+    batch_no: u.batch_no || "-",
+    expiry_date: u.expiry_date,
+    mrp: u.mrp ?? "-",
+    quantity: Number(u.quantity) || 0, // ✅ FIXED
+    counted_by:
+      u.team_leader && u.username
+        ? `${u.team_leader} (${u.username})`
+        : u.team_name || "-",
+  }));
+
+  // ✅ 3. MERGE BOTH
+  const allRows = [...submittedRows, ...newRows];
+
+  if (allRows.length === 0) {
+    message.warning("No data to print");
+    return;
+  }
+
+  console.log("FINAL PRINT DATA:", allRows);
+
+  // ✅ 4. TOTAL QTY (SAFE)
+  const totalQty = allRows.reduce(
+    (sum, r) => sum + (isNaN(Number(r.quantity)) ? 0 : Number(r.quantity)),
+    0
+  );
+
+  // ✅ 5. GENERATE DATA ROWS
+  const rows = allRows
+    .map((u, i) => {
+      const batch = u.batch_no || "-";
+      const expiry = u.expiry_date
+        ? dayjs(u.expiry_date).format("DD-MM-YYYY")
+        : "-";
+      const mrp = u.mrp ?? "-";
+      const qty = u.quantity === 0 ? "" : u.quantity;
+
+      return `
         <tr>
           <td>${i + 1}</td>
           <td>${batch}</td>
           <td>${expiry}</td>
           <td>${mrp}</td>
           <td>${qty}</td>
+          <td>${u.counted_by || "-"}</td>
         </tr>
       `;
-      })
-      .join("");
+    })
+    .join("");
 
-    // ✅ 6. AUTO BLANK ROWS (FIT PAGE)
-    const maxRowsPerPage = 22; // 🔥 adjust once based on printer
-    const blankRowCount = Math.max(0, maxRowsPerPage - allRows.length - 1); // -1 for total row
+  // ✅ 6. AUTO BLANK ROWS
+  const maxRowsPerPage = 20;
+  const blankRowCount = Math.max(0, maxRowsPerPage - allRows.length - 1);
 
-    const blankRows = Array.from({ length: blankRowCount })
-      .map(
-        () => `
-        <tr>
-          <td>&nbsp;</td>
-          <td></td>
-          <td></td>
-          <td></td>
-          <td></td>
-        </tr>
-      `,
-      )
-      .join("");
+  const blankRows = Array.from({ length: blankRowCount })
+    .map(
+      () => `
+      <tr>
+        <td>&nbsp;</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+      </tr>
+    `
+    )
+    .join("");
 
-    // ✅ 7. TOTAL ROW
-    const totalRow = `
+  // ✅ 7. TOTAL ROW
+  const totalRow = `
     <tr>
-      <td colspan="4" style="text-align:right; font-weight:bold;">
+      <td colspan="5" style="text-align:right; font-weight:bold;">
         TOTAL
       </td>
       <td style="font-weight:bold;">
-        ${totalQty || " "}
+        ${totalQty || ""}
       </td>
     </tr>
   `;
 
-    // ✅ 8. HTML TEMPLATE
-    const html = `
+  // ✅ SYSTEM STOCK TOTAL
+  const systemStockTotal = (selectedProduct?.systemUnits || []).reduce(
+    (sum, u) => sum + Number(u.sys_quantity || 0),
+    0
+  );
+
+  // ✅ 8. HTML TEMPLATE
+  const html = `
 <html>
 <head>
 <style>
@@ -2766,10 +3002,6 @@ useEffect(() => {
   .table th {
     background: #f0f0f0;
   }
-
-  .total-row td {
-    border-top: 1px solid #000;
-  }
 </style>
 </head>
 
@@ -2779,6 +3011,7 @@ useEffect(() => {
     <div class="header">
       <div><b>SL No:</b> ${selectedProduct.sl_no}</div>
       <div><b>Item:</b> ${selectedProduct.item_name}</div>
+      <div><b>System Stock:</b> ${systemStockTotal}</div>
     </div>
 
     <table class="table">
@@ -2789,6 +3022,7 @@ useEffect(() => {
           <th>Expiry</th>
           <th>MRP</th>
           <th>Qty</th>
+          <th>Team</th>
         </tr>
       </thead>
 
@@ -2804,14 +3038,15 @@ useEffect(() => {
 </html>
 `;
 
-    printWindow.document.write(html);
-    printWindow.document.close();
+  printWindow.document.write(html);
+  printWindow.document.close();
 
-    setTimeout(() => {
-      printWindow.print();
-      printWindow.close();
-    }, 500);
-  };
+  setTimeout(() => {
+    printWindow.print();
+    printWindow.close();
+  }, 500);
+};
+
 
   /////////////////////////////////////////////////////////////
   ///////////////CODE FOR PRINTING SLIP (ENDS) ////////////////
