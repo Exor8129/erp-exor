@@ -47,14 +47,34 @@ export default function ComplaintStockPage() {
   // -----------------------------
   // FETCH ITEMS
   // -----------------------------
-  const fetchItems = async () => {
-    const { data } = await supabase
+ const fetchItems = async () => {
+  let allItems = [];
+  let from = 0;
+  const limit = 1000;
+
+  while (true) {
+    const { data, error } = await supabase
       .from("item_master")
       .select("id, item_name")
-      .order("item_name");
+      .order("item_name")
+      .range(from, from + limit - 1);
 
-    setItems(data || []);
-  };
+    if (error) {
+      message.error("Error loading items");
+      break;
+    }
+
+    if (!data || data.length === 0) break;
+
+    allItems = [...allItems, ...data];
+
+    if (data.length < limit) break;
+
+    from += limit;
+  }
+
+  setItems(allItems);
+};
 
   // -----------------------------
   // FETCH DATA
