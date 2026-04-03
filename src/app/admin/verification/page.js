@@ -396,8 +396,9 @@ This action cannot be undone.`,
           (s, u) => s + Number(u.count_quantity || 0),
           0,
         );
-        const adjustedSys = Math.abs(sys);
-        const diff = count + (r.complaintQty || 0) - adjustedSys;
+        // const adjustedSys = Math.abs(sys);
+        // const diff = count + (r.complaintQty || 0) - adjustedSys;
+        const diff = count + (r.complaintQty || 0) - sys;
 
         return <Text type={getValueColor(diff)}>{diff}</Text>;
       },
@@ -944,25 +945,15 @@ This action cannot be undone.`,
                 <Card size="small">
                   Diff:
                   <div>
-                    {(() => {
-                      const count = selectedProduct.systemUnits.reduce(
-                        (s, u) => s + Number(u.count_quantity || 0),
-                        0,
-                      );
-
-                      const sys = selectedProduct.systemUnits.reduce(
+                    {selectedProduct.systemUnits.reduce(
+                      (s, u) => s + Number(u.count_quantity || 0),
+                      0,
+                    ) +
+                      (selectedProduct.complaintQty || 0) -
+                      selectedProduct.systemUnits.reduce(
                         (s, u) => s + Number(u.sys_quantity || 0),
                         0,
-                      );
-
-                      const adjustedSys = Math.abs(sys);
-
-                      return (
-                        count +
-                        (selectedProduct.complaintQty || 0) -
-                        adjustedSys
-                      );
-                    })()}
+                      )}
                   </div>
                 </Card>
               </Col>
