@@ -451,7 +451,17 @@ This action cannot be undone.`,
     },
     {
       title: "Item Name",
-      dataIndex: "item_name",
+      render: (_, record) => (
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span>{record.item_name}</span>
+
+          {record.status === "verified" && (
+            <Tag color="#021A54" style={{ fontSize: 10, padding: "0 6px" }}>
+              VERIFIED
+            </Tag>
+          )}
+        </div>
+      ),
     },
     {
       title: "Counted By",
@@ -979,8 +989,8 @@ This action cannot be undone.`,
           loading={loading}
           pagination={{ pageSize: 10 }}
           rowClassName={(record) =>
-    pinnedItems.some((p) => p.id === record.id) ? "pinned-row" : ""
-  }
+            pinnedItems.some((p) => p.id === record.id) ? "pinned-row" : ""
+          }
           onRow={(record) => ({
             onClick: () => {
               // // ✅ allow only these statuses
