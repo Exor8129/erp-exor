@@ -34,7 +34,17 @@ export default function VerificationPage() {
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [actionType, setActionType] = useState(null);
-  
+  const [pinnedItems, setPinnedItems] = useState([]);
+
+  const [sortConfig, setSortConfig] = useState({
+    field: "sl_no",
+    order: "asc", // "asc" | "desc"
+  });
+
+  const [filters, setFilters] = useState({
+    team: null,
+    status: null,
+  });
 
   const [resolution, setResolution] = useState({
     sellable: 0,
@@ -283,17 +293,18 @@ This action cannot be undone.`,
   // FILTERING
   // -----------------------------
   const filteredItems = useMemo(() => {
-    let data = products;
+    let data = [...products];
 
+    // -----------------------------
+    // TAB FILTER (status)
+    // -----------------------------
     if (activeTab !== "all") {
-      data = data.filter((p) => {
-        if (activeTab !== "all") {
-          data = data.filter((p) => p.status === activeTab);
-        }
-        return p.status === activeTab;
-      });
+      data = data.filter((p) => p.status === activeTab);
     }
 
+    // -----------------------------
+    // SEARCH FILTER
+    // -----------------------------
     if (searchText) {
       const text = searchText.toLowerCase();
 
@@ -304,13 +315,89 @@ This action cannot be undone.`,
           p.teams?.some((t) => t.toLowerCase().includes(text)),
       );
     }
-    // ✅ SORT ONLY FOR ALL & PENDING
-    if (activeTab === "all" || activeTab === "pending") {
-      data.sort((a, b) => Number(a.sl_no) - Number(b.sl_no));
+
+    // -----------------------------
+    // EXTRA FILTERS
+    // -----------------------------
+    if (filters.team) {
+      data = data.filter((p) => p.teams?.includes(filters.team));
     }
 
-    return data;
-  }, [products, activeTab, searchText]);
+    if (filters.status) {
+      data = data.filter((p) => p.status === filters.status);
+    }
+
+    // -----------------------------
+    // 🔥 REMOVE duplicates with pinned
+    // -----------------------------
+    const nonPinnedData = data.filter(
+      (d) => !pinnedItems.some((p) => p.id === d.id),
+    );
+
+    // -----------------------------
+    // SORTING HELPERS
+    // -----------------------------
+    const getSysQty = (r) =>
+      r.systemUnits.reduce((s, u) => s + Number(u.sys_quantity || 0), 0);
+
+    const getCountQty = (r) =>
+      r.systemUnits.reduce((s, u) => s + Number(u.count_quantity || 0), 0) +
+      Number(r.complaintQty || 0);
+
+    const getDiff = (r) => getCountQty(r) - getSysQty(r);
+
+    const getPL = (r) => {
+      const rate = r.systemUnits[0]?.rate || 0;
+      return getDiff(r) * rate;
+    };
+
+    // -----------------------------
+    // SORT FUNCTION
+    // -----------------------------
+    const sortFn = (a, b) => {
+      let valA = 0;
+      let valB = 0;
+
+      switch (sortConfig.field) {
+        case "sl_no":
+          valA = Number(a.sl_no);
+          valB = Number(b.sl_no);
+          break;
+
+        case "diff":
+          valA = getDiff(a);
+          valB = getDiff(b);
+          break;
+
+        case "pl":
+          valA = getPL(a);
+          valB = getPL(b);
+          break;
+
+        default:
+          return 0;
+      }
+
+      if (sortConfig.order === "asc") return valA - valB;
+      return valB - valA;
+    };
+
+    // -----------------------------
+    // APPLY SORTING
+    // -----------------------------
+    let sortedData = [...nonPinnedData];
+
+    if (sortConfig.field) {
+      sortedData.sort(sortFn);
+    }
+
+    // -----------------------------
+    // FINAL MERGE (PINNED ON TOP)
+    // -----------------------------
+    const finalData = [...pinnedItems, ...sortedData];
+
+    return finalData;
+  }, [products, activeTab, searchText, filters, sortConfig, pinnedItems]);
 
   // -----------------------------
   // BATCH GROUPING
@@ -455,6 +542,32 @@ This action cannot be undone.`,
           <Text strong type={getValueColor(diffValue)}>
             ₹ {diffValue.toFixed(2)}
           </Text>
+        );
+      },
+    },
+    {
+      title: "Pin",
+      render: (_, record) => {
+        const isPinned = pinnedItems.some((p) => p.id === record.id);
+
+        return (
+          <Button
+            size="small"
+            type={isPinned ? "default" : "primary"}
+            onClick={(e) => {
+              e.stopPropagation();
+
+              if (isPinned) {
+                setPinnedItems((prev) =>
+                  prev.filter((p) => p.id !== record.id),
+                );
+              } else {
+                setPinnedItems((prev) => [...prev, record]);
+              }
+            }}
+          >
+            {isPinned ? "Unpin" : "📌 Pin"}
+          </Button>
         );
       },
     },
@@ -784,6 +897,79 @@ This action cannot be undone.`,
             },
           ]}
         />
+        <Row gutter={10} style={{ marginBottom: 10 }}>
+          <Col span={8}>
+            <Select
+              placeholder="Filter by Team"
+              allowClear
+              style={{ width: "100%" }}
+              onChange={(val) => setFilters((prev) => ({ ...prev, team: val }))}
+              options={[...new Set(products.flatMap((p) => p.teams || []))].map(
+                (t) => ({ label: t, value: t }),
+              )}
+            />
+          </Col>
+
+          <Col span={8}>
+            <Select
+              placeholder="Sort By"
+              allowClear
+              style={{ width: "100%" }}
+              onChange={(val) =>
+                setSortConfig((prev) => ({
+                  ...prev,
+                  field: val,
+                }))
+              }
+              options={[
+                { label: "Sl No", value: "sl_no" },
+                { label: "Difference", value: "diff" },
+                { label: "P/L", value: "pl" },
+              ]}
+            />
+          </Col>
+
+          <Col span={8}>
+            <Select
+              placeholder="Order"
+              allowClear
+              style={{ width: "100%" }}
+              onChange={(val) =>
+                setSortConfig((prev) => ({
+                  ...prev,
+                  order: val,
+                }))
+              }
+              options={[
+                { label: "Ascending", value: "asc" },
+                { label: "Descending", value: "desc" },
+              ]}
+            />
+          </Col>
+        </Row>
+
+        <Button
+          onClick={() => {
+            setFilters({ team: null, status: null });
+
+            // ✅ Default sorting applied
+            setSortConfig({
+              field: "sl_no",
+              order: "asc",
+            });
+
+            setSearchText("");
+            setActiveTab("all");
+          }}
+        >
+          Reset Filters
+        </Button>
+        <Button
+          onClick={() => setPinnedItems([])}
+          disabled={pinnedItems.length === 0}
+        >
+          Clear Pins
+        </Button>
 
         {/* TABLE */}
         <Table
@@ -792,6 +978,9 @@ This action cannot be undone.`,
           columns={columns}
           loading={loading}
           pagination={{ pageSize: 10 }}
+          rowClassName={(record) =>
+    pinnedItems.some((p) => p.id === record.id) ? "pinned-row" : ""
+  }
           onRow={(record) => ({
             onClick: () => {
               // // ✅ allow only these statuses
