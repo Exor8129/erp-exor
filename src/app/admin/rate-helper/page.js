@@ -13,69 +13,66 @@ export default function PriceLookupPage() {
   const [data, setData] = useState([]);
   const [latest, setLatest] = useState(null);
   const [boardItems, setBoardItems] = useState([]);
+  const [activeFilter, setActiveFilter] = useState(null);
 
   // 🔄 Load dropdowns
-const fetchFilters = async () => {
-  try {
-    const { data, error } = await supabase
-      .rpc("get_distinct_filters");
+  const fetchInitialFilters = async () => {
+    try {
+      // Fetch customers
+      const { data: partyData, error: partyError } = await supabase.rpc(
+        "get_distinct_parties",
+      );
 
-    if (error) throw error;
+      if (partyError) throw partyError;
 
-    // Extract unique customers
-    const uniqueCustomers = [
-      ...new Set(data.map((d) => d.party_name)),
-    ];
+      // Fetch items
+      const { data: itemData, error: itemError } =
+        await supabase.rpc("get_distinct_items");
 
-    // Extract unique items
-    const uniqueItems = [
-      ...new Set(data.map((d) => d.item_name)),
-    ];
+      if (itemError) throw itemError;
 
-    setCustomers(uniqueCustomers);
-    setItems(uniqueItems);
+      setCustomers(partyData.map((d) => d.party_name));
 
-  } catch (err) {
-    console.error(err);
-    message.error("Failed to load filters ❌");
-  }
-};
-
+      setItems(itemData.map((d) => d.item_name));
+    } catch (err) {
+      console.error(err);
+      message.error("Failed to load filters ❌");
+    }
+  };
   useEffect(() => {
-    fetchFilters();
+    fetchInitialFilters();
   }, []);
 
   // 🔍 Fetch data based on selection
-const fetchData = async (page = 1, pageSize = 10) => {
-  if (!selectedCustomer || !selectedItem) return;
+  const fetchData = async (page = 1, pageSize = 10) => {
+    if (!selectedCustomer || !selectedItem) return;
 
-  try {
-    const from = (page - 1) * pageSize;
-    const to = from + pageSize - 1;
+    try {
+      const from = (page - 1) * pageSize;
+      const to = from + pageSize - 1;
 
-    const { data, error, count } = await supabase
-      .from("sales_data")
-      .select("id, date, qty, rate,vch_no", { count: "exact" }) // ✅ Get total count
-      .eq("party_name", selectedCustomer)
-      .eq("item_name", selectedItem)
-      .order("date", { ascending: false })
-      .order("id", { ascending: false })
-      .range(from, to);
+      const { data, error, count } = await supabase
+        .from("sales_data")
+        .select("id, date, qty, rate,vch_no", { count: "exact" }) // ✅ Get total count
+        .eq("party_name", selectedCustomer)
+        .eq("item_name", selectedItem)
+        .order("date", { ascending: false })
+        .order("id", { ascending: false })
+        .range(from, to);
 
-    if (error) throw error;
+      if (error) throw error;
 
-    setData(data);
-    // Set total count for the Ant Design table pagination
-    // setTotal(count); 
-    
-    // Only set latest once when on page 1
-    if (page === 1) setLatest(data[0] || null);
+      setData(data);
+      // Set total count for the Ant Design table pagination
+      // setTotal(count);
 
-  } catch (err) {
-    console.error(err);
-    message.error("Failed to fetch data ❌");
-  }
-};
+      // Only set latest once when on page 1
+      if (page === 1) setLatest(data[0] || null);
+    } catch (err) {
+      console.error(err);
+      message.error("Failed to fetch data ❌");
+    }
+  };
   useEffect(() => {
     fetchData();
   }, [selectedCustomer, selectedItem]);
@@ -87,41 +84,56 @@ const fetchData = async (page = 1, pageSize = 10) => {
       render: (d) => dayjs(d).format("DD-MM-YYYY"),
     },
     {
-    title: "Voucher",
-    dataIndex: "voucher_no",
-  },
+      title: "Voucher",
+      dataIndex: "voucher_no",
+    },
     { title: "Qty", dataIndex: "qty" },
     { title: "Rate", dataIndex: "rate" },
     // { title: "Amount", dataIndex: "amount" },
   ];
 
-  const addToBoard = (record) => {
-  if (!selectedItem) return;
+  const fetchItemsByParty = async (party) => {
+    try {
+      const { data, error } = await supabase.rpc("get_items_by_party", {
+        p_party: party ?? null,
+      });
 
-  const newItem = {
-    key: Date.now(),
-    item_name: selectedItem,
-    rate: record.rate,
-    date: record.date,
-    vch_no: record.vch_no,
+      if (error) throw error;
+
+      setItems(data.map((d) => d.item_name));
+    } catch (err) {
+      console.error(err);
+      message.error("Failed to load items ❌");
+    }
   };
-
-  setBoardItems((prev) => [...prev, newItem]);
-};
 
   return (
     <div className="p-6">
       <Card title="Customer Price Lookup" className="shadow rounded-xl">
-
         {/* Filters */}
         <Row gutter={16}>
           <Col span={12}>
             <Select
               placeholder="Select Customer"
               style={{ width: "100%" }}
-              onChange={setSelectedCustomer}
-              options={customers.map((c) => ({ label: c, value: c }))}
+              value={selectedCustomer}
+              allowClear // important
+              onChange={(value) => {
+                setSelectedCustomer(value);
+
+                // If cleared → load all items
+                if (!value) {
+                  fetchInitialFilters(); // reload all
+                } else {
+                  fetchItemsByParty(value);
+                }
+              }}
+              options={customers.map((c, index) => ({
+                label: `${index + 1}. ${c}`,
+                value: c,
+              }))}
               showSearch
+              virtual={false}
             />
           </Col>
 
@@ -129,10 +141,16 @@ const fetchData = async (page = 1, pageSize = 10) => {
             <Select
               placeholder="Select Item"
               style={{ width: "100%" }}
-              onChange={setSelectedItem}
-              options={items.map((i) => ({ label: i, value: i }))}
+              value={selectedItem}
+              onChange={(value) => {
+                setSelectedItem(value);
+              }}
+              options={items.map((c, index) => ({
+                label: `${index + 1}. ${c}`,
+                value: c,
+              }))}
               showSearch
-               virtual={false}
+              virtual={false}
             />
           </Col>
         </Row>
@@ -141,10 +159,18 @@ const fetchData = async (page = 1, pageSize = 10) => {
         {latest && (
           <Card className="mt-4 bg-green-50">
             <h3>Last Sold Price</h3>
-            <p><b>Date:</b> {dayjs(latest.date).format("DD-MM-YYYY")}</p>
-            <p><b>Voucher:</b> {latest.vch_no}</p>
-            <p><b>Qty:</b> {latest.qty}</p>
-            <p><b>Rate:</b> ₹{latest.rate}</p>
+            <p>
+              <b>Date:</b> {dayjs(latest.date).format("DD-MM-YYYY")}
+            </p>
+            <p>
+              <b>Voucher:</b> {latest.vch_no}
+            </p>
+            <p>
+              <b>Qty:</b> {latest.qty}
+            </p>
+            <p>
+              <b>Rate:</b> ₹{latest.rate}
+            </p>
           </Card>
         )}
 
