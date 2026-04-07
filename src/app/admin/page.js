@@ -16,6 +16,7 @@ import {
   Folder,
   Drill,
   Printer,
+  Coins,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -52,6 +53,7 @@ export default function AdminPage() {
       items: [
         { name: "Product Groups", key: "groups", icon: Folder },
         { name: "Import Stock Data", key: "stock", icon: Boxes,route: "/admin/importStock" },
+        { name: "Import Sales Data", key: "sales", icon: Folder,route: "/admin/importSales" },
         { name: "Purchase Rate Correction", key: "pur-rate-corr", icon: Layers,route: "/admin/purchase-rate-correction" },
       ],
     },
@@ -82,6 +84,7 @@ export default function AdminPage() {
       title: "Future Features",
       items: [
         { name: "Complaints", key: "complaints", icon: Drill,route: "/admin/complaints" },
+        { name: "Rate Helper", key: "rate-helper", icon:Coins,route: "/admin/rate-helper" },
         { name: "Print Count Sheets", key: "print-count-sheets", icon: Printer,route: "/admin/printcountpage/26" },
         
       ],

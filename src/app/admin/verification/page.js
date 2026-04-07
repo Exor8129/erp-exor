@@ -18,6 +18,8 @@ import {
   Badge,
   Button,
 } from "antd";
+import * as XLSX from "xlsx";
+import { saveAs } from "file-saver";
 
 const { Text } = Typography;
 const { confirm } = Modal;
@@ -502,7 +504,12 @@ This action cannot be undone.`,
     },
     {
       title: "Rate",
-      render: (_, r) => r.systemUnits[0]?.rate || 0,
+      render: (_, r) => {
+        const unitWithRate=r.systemUnits.find(
+          (u) => u.rate !== null && u.rate !== undefined
+        );
+        return unitWithRate ?.rate?? 0;
+      }
     },
 
     {
@@ -522,11 +529,10 @@ This action cannot be undone.`,
     {
       title: "Count Value",
       render: (_, r) => {
-        const rate = r.systemUnits[0]?.rate || 0;
+        const rate = r.systemUnits[0]?.rate || "NaN";
 
         const countQty =
-          r.systemUnits.reduce((s, u) => s + Number(u.count_quantity || 0), 0) +
-          Number(r.complaintQty || 0);
+          r.systemUnits.reduce((s, u) => s + Number(u.count_quantity || 0), 0) ;
 
         return (countQty * rate).toFixed(2);
       },
@@ -543,8 +549,7 @@ This action cannot be undone.`,
         );
 
         const countQty =
-          r.systemUnits.reduce((s, u) => s + Number(u.count_quantity || 0), 0) +
-          Number(r.complaintQty || 0);
+          r.systemUnits.reduce((s, u) => s + Number(u.count_quantity || 0), 0);
 
         const diffValue = (countQty - sysQty) * rate;
 
@@ -616,8 +621,7 @@ This action cannot be undone.`,
       );
 
       const countQty =
-        r.systemUnits.reduce((s, u) => s + Number(u.count_quantity || 0), 0) +
-        Number(r.complaintQty || 0);
+        r.systemUnits.reduce((s, u) => s + Number(u.count_quantity || 0), 0);
 
       const sysVal = sysQty * rate;
       const countVal = countQty * rate;
@@ -805,6 +809,90 @@ This action cannot be undone.`,
     }
   };
 
+
+const exportToExcel = () => {
+  if (!filteredItems.length) {
+    message.warning("No data to export");
+    return;
+  }
+
+  const data = filteredItems.map((r) => {
+    const rate = r.systemUnits[0]?.rate || 0;
+
+    // System Qty
+    const sysQty = r.systemUnits.reduce(
+      (s, u) => s + Number(u.sys_quantity || 0),
+      0
+    );
+
+    // ✅ Physical Count Only
+    const countQty = r.systemUnits.reduce(
+      (s, u) => s + Number(u.count_quantity || 0),
+      0
+    );
+
+    // Complaint Qty
+    const complaintQty = Number(r.complaintQty || 0);
+
+    // ✅ Adjusted Count (used for difference)
+    const adjustedCountQty = countQty + complaintQty;
+
+    // Difference
+    const diff = adjustedCountQty - sysQty;
+
+    // Values
+    const sysValue = sysQty * rate;
+    const countValue = adjustedCountQty * rate;
+    const pl = diff * rate;
+
+    return {
+      "Sl No": r.sl_no,
+      "Item Name": r.item_name,
+      "Team": r.teams?.join(", "),
+
+      "System Qty": sysQty,
+
+      // ✅ Now correct
+      "Counted Qty": countQty,
+
+      "Complaint Qty": complaintQty,
+
+      "Adjusted Count Qty": adjustedCountQty,
+
+      "Difference": diff,
+      "Rate": rate,
+
+      // ⚠️ Keep numeric (no toFixed)
+      "System Value": sysValue,
+      "Count Value": countValue,
+      "P/L": pl,
+
+      "Status": r.status,
+    };
+  });
+
+  const worksheet = XLSX.utils.json_to_sheet(data);
+
+  const workbook = XLSX.utils.book_new();
+
+  XLSX.utils.book_append_sheet(
+    workbook,
+    worksheet,
+    "Inventory Verification"
+  );
+
+  const excelBuffer = XLSX.write(workbook, {
+    bookType: "xlsx",
+    type: "array",
+  });
+
+  const blob = new Blob([excelBuffer], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8",
+  });
+
+  saveAs(blob, `Inventory_Verification_${cycleId}.xlsx`);
+};
+
   return (
     <div style={{ padding: 16 }}>
       <Card>
@@ -824,6 +912,13 @@ This action cannot be undone.`,
             label: `Cycle #${c.id}`,
           }))}
         />
+        <Button
+  type="primary"
+  onClick={exportToExcel}
+  style={{ marginLeft: 8 }}
+>
+  📥 Export to Excel
+</Button>
 
         {/* FILTER */}
         <Row gutter={10} style={{ marginBottom: 10 }}>
