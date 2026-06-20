@@ -628,3 +628,12 @@
 //     </div>
 //   );
 // }
+
+
+"use client";
+
+const PurchaseRequestPage = () => {
+  return <div>Purchase Request</div>;
+};
+
+export default PurchaseRequestPage;
