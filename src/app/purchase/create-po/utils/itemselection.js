@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import {
   Table,
   Select,
@@ -11,7 +11,10 @@ import {
   Input,
   Divider,
 } from "antd";
-import { Package, Trash2, Plus } from "lucide-react";
+import { Package, Trash2, Plus, TrendingUpDown } from "lucide-react";
+
+// import { loadTallyExcel } from "../../../lib/loadTallyExcel";
+import TrendCard from "./sub-utils/trendcard";
 
 export default function ProductSelection({
   items = [],
@@ -26,11 +29,21 @@ export default function ProductSelection({
   const [showPricing, setShowPricing] = useState(false);
   const [tempProductModalOpen, setTempProductModalOpen] = useState(false);
   const [targetRow, setTargetRow] = useState(null);
+  const [salesTrendModalOpen, setSalesTrendModalOpen] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState(null);
 
+  const [salesData, setSalesData] = useState([]);
   const [tempProduct, setTempProduct] = useState({
     name: "",
     unit: "",
   });
+
+  const handleShowSalesTrend = (record) => {
+    setSelectedProduct(record);
+    setSalesTrendModalOpen(true);
+  };
+
+
 
   // Financial Calculations
   const totals = useMemo(() => {
@@ -146,7 +159,6 @@ export default function ProductSelection({
             <div className="flex flex-col w-full gap-1 py-0.5">
               <Select
                 showSearch
-                labelInValue // FIX: Forces Select to read custom label objects directly
                 className="w-full"
                 placeholder={
                   record.isGhost
@@ -155,23 +167,15 @@ export default function ProductSelection({
                 }
                 variant={record.isGhost ? "dashed" : "outlined"}
                 loading={loadingProducts}
-                // FIX: Maps both database values and temporary items safely to display text immediately
-                value={
-                  record.productId
-                    ? {
-                        value: record.productId,
-                        label: record.productName || record.productId,
-                      }
-                    : undefined
-                }
+                value={record.productName || undefined}
                 optionFilterProp="label"
                 filterOption={(input, option) =>
                   (option?.label ?? "")
                     .toLowerCase()
                     .includes(input.toLowerCase())
                 }
-                onChange={(option) => {
-                  const product = productOptions.find((p) => p.id === option.value);
+                onChange={(value) => {
+                  const product = productOptions.find((p) => p.id === value);
                   if (!product) return;
 
                   if (record.isGhost) {
@@ -347,6 +351,20 @@ export default function ProductSelection({
         render: (_, record) =>
           !record.isGhost && (
             <Button
+              type="text"
+              icon={<TrendingUpDown size={16} />}
+              className="text-blue-500 hover:text-blue-700"
+              onClick={() => handleShowSalesTrend(record)}
+            />
+          ),
+      },
+      {
+        title: "",
+        width: 60,
+        align: "center",
+        render: (_, record) =>
+          !record.isGhost && (
+            <Button
               danger
               type="text"
               icon={<Trash2 size={16} />}
@@ -495,6 +513,13 @@ export default function ProductSelection({
           </div>
         </div>
       </Modal>
+
+      <TrendCard
+        open={salesTrendModalOpen}
+        onClose={() => setSalesTrendModalOpen(false)}
+        selectedProduct={selectedProduct}
+        salesData={salesData}
+      />
     </div>
   );
 }

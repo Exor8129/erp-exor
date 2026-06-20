@@ -1,24 +1,18 @@
 "use client";
 
 import { Card, Button, Divider } from "antd";
-import {
-  Save,
-  Eye,
-  FilePlus2,
-  X,
-} from "lucide-react";
+import { Save, Eye, FilePlus2, X } from "lucide-react";
 
 export default function POFooter({
-totalItems = 0,
+  totalItems = 0,
   totalQty = 0,
   grandTotal = 0,
   onCancel,
   onSaveDraft,
   onPreview,
   onSubmit,
+  mode,
 }) {
-
-    
   return (
     <Card className="shadow-sm rounded-xl">
       <div className="flex justify-between items-center">
@@ -44,28 +38,16 @@ totalItems = 0,
 
         {/* Actions */}
         <div className="flex gap-2">
-          <Button
-            icon={<X size={16} />}
-            onClick={onCancel}
-          >
+          <Button icon={<X size={16} />} onClick={onCancel}>
             Cancel
           </Button>
 
-          <Button
-            icon={<Save size={16} />}
-            onClick={onSaveDraft}
-          >
+          <Button icon={<Save size={16} />} onClick={onSaveDraft}>
             Save Draft
           </Button>
 
-          
-
-          <Button
-            type="primary"
-            icon={<FilePlus2 size={16} />}
-            onClick={onSubmit}
-          >
-            Create PO
+          <Button type="primary" onClick={onSubmit}>
+            {mode === "edit" ? "Update PO" : "Create PO"}
           </Button>
         </div>
       </div>

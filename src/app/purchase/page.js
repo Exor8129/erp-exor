@@ -8,7 +8,7 @@ import PendingApprovalsCard from "./utils/cards/pendingapprvls";
 import NewVendorRequestsCard from "./utils/cards/newvendreq";
 import NewItemRequestsCard from "./utils/cards/newitemreq";
 import CreatePurchaseOrderCard from "./utils/cards/createpo.js";
-import PurchaseOrdersTable from "./utils/maincontents/purchaseorders";
+import PurchaseOrdersTable from "./utils/maincontents/activepurchaseorders";
 import PendingApprovals from "./utils/maincontents/pendingapprovals";
 import NewRequestFeed from "./utils/maincontents/newrequestfeed";
 

@@ -6,7 +6,7 @@ import { Eye, Pencil, Printer, Trash2 } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { message } from "antd";
-import ShipmentDrawer from "./subcontents/ShipmentDrawer";
+import { useRouter } from "next/navigation";
 import LogisticsModal from "./subcontents/LogisticsModal";
 import ViewPurchaseOrderModal from "./subcontents/ViewPurchaseOrderModal";
 
@@ -114,6 +114,8 @@ const TableRow = ({
   </tr>
 );
 
+
+
 export default function PurchaseOrdersTable() {
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -125,6 +127,10 @@ export default function PurchaseOrdersTable() {
   const [shipmentDrawerOpen, setShipmentDrawerOpen] = useState(false);
   const [transporters, setTransporters] = useState([]);
   const [shipments, setShipments] = useState([]);
+
+  const router = useRouter();
+
+
   useEffect(() => {
     fetchTransporters();
   }, []);
@@ -183,6 +189,7 @@ export default function PurchaseOrdersTable() {
         grand_total,
         created_at,
         supplier_id,
+        shipping_address_id,
         qty_only_mode
       `,
       )
@@ -237,7 +244,13 @@ export default function PurchaseOrdersTable() {
       .eq("id", id);
 
     if (error) {
-      console.error("Delete error:", error);
+      console.log("FULL ERROR:", error);
+      console.log("MESSAGE:", error?.message);
+      console.log("DETAILS:", error?.details);
+      console.log("HINT:", error?.hint);
+      console.log("CODE:", error?.code);
+
+      alert(error?.message || "Delete failed");
       return;
     }
 
@@ -270,6 +283,21 @@ export default function PurchaseOrdersTable() {
       if (vendorError) throw vendorError;
 
       // =====================================================
+      // FETCH SHIPPING ADDRESS
+      // =====================================================
+      let shippingAddress = null;
+
+      if (po.shipping_address_id) {
+        const { data } = await supabase
+          .from("company_addresses")
+          .select("*")
+          .eq("id", po.shipping_address_id)
+          .single();
+
+        shippingAddress = data;
+      }
+
+      // =====================================================
       // FETCH ITEMS
       // =====================================================
       const { data: items, error: itemsError } = await supabase
@@ -280,6 +308,8 @@ export default function PurchaseOrdersTable() {
         .order("created_at");
 
       if (itemsError) throw itemsError;
+
+      const isQtyOnly = po.qty_only_mode === true;
 
       // =====================================================
       // CALCULATIONS
@@ -309,15 +339,13 @@ export default function PurchaseOrdersTable() {
       // =====================================================
       doc.setFont("helvetica", "bold");
       doc.setFontSize(18);
-
-      doc.text("YOUR COMPANY NAME", 14, 18);
+      doc.text("Exor Medical Systems", 14, 18);
 
       doc.setFont("helvetica", "normal");
       doc.setFontSize(9);
 
       doc.text("Purchase Department", 14, 24);
-
-      doc.text("Tamil Nadu, India", 14, 29);
+      doc.text("Kerala, India", 14, 29);
 
       doc.setFont("helvetica", "bold");
       doc.setFontSize(20);
@@ -331,212 +359,131 @@ export default function PurchaseOrdersTable() {
       });
 
       // =====================================================
-      // MAIN TABLE BODY
+      // BODY
       // =====================================================
-      const body = [
-        // ----------------------------------
-        // BILL TO / VENDOR
-        // ----------------------------------
-        [
-          {
-            content:
-              "BILL TO\n\n" + "YOUR COMPANY NAME\n" + "Tamil Nadu, India",
-            colSpan: 3,
-            styles: {
-              minCellHeight: 28,
-              valign: "top",
-              fontStyle: "bold",
-            },
-          },
+      const body = [];
 
-          {
-            content:
-              "VENDOR\n\n" +
-              `${vendor.vendor_name || ""}\n` +
-              `${vendor.address || ""}\n` +
-              `${vendor.phone || ""}`,
-            colSpan: 4,
-            styles: {
-              minCellHeight: 28,
-              valign: "top",
-            },
-          },
-        ],
+      // =====================================================
+      // BILL TO / VENDOR
+      // =====================================================
+      body.push([
+        {
+          content: "BILL TO\n\n" + "Exor Medical Systems\n" + "Kerala, India",
 
-        // ----------------------------------
-        // SHIP TO / PO DETAILS
-        // ----------------------------------
-        [
-          {
-            content:
-              "SHIP TO\n\n" +
-              `${vendor.vendor_name || ""}\n` +
-              `${vendor.address || ""}`,
-            colSpan: 3,
-            styles: {
-              minCellHeight: 28,
-              valign: "top",
-            },
-          },
+          colSpan: isQtyOnly ? 2 : 3,
 
-          {
-            content:
-              "PO DETAILS\n\n" +
-              `PO No : ${po.po_number}\n` +
-              `Date : ${new Date(po.created_at).toLocaleDateString(
-                "en-IN",
-              )}\n` +
-              `Status : ${po.status || "-"}\n` +
-              `Total Qty : ${Number(po.total_qty || 0).toFixed(2)}`,
-            colSpan: 4,
-            styles: {
-              minCellHeight: 28,
-              valign: "top",
-            },
+          styles: {
+            minCellHeight: 30,
+            valign: "top",
+            fontStyle: "bold",
           },
-        ],
+        },
 
-        // ----------------------------------
-        // ITEM HEADER
-        // ----------------------------------
-        [
-          {
-            content: "Code",
-            styles: {
-              fontStyle: "bold",
-              fillColor: [41, 181, 160],
-              textColor: 255,
-            },
+        {
+          content:
+            "VENDOR\n\n" +
+            `${vendor.vendor_name || ""}\n` +
+            `${vendor.address || ""}\n` +
+            `${vendor.mobile_number || ""}`,
+
+          colSpan: isQtyOnly ? 2 : 4,
+
+          styles: {
+            minCellHeight: 30,
+            valign: "top",
           },
-          {
-            content: "Item",
-            styles: {
-              fontStyle: "bold",
-              fillColor: [41, 181, 160],
-              textColor: 255,
-            },
+        },
+      ]);
+
+      // =====================================================
+      // SHIP TO
+      // =====================================================
+      body.push([
+        {
+          content:
+            "SHIP TO\n\n" +
+            `${shippingAddress?.company_name || ""}\n` +
+            `${shippingAddress?.address_line1 || ""}\n` +
+            `${shippingAddress?.address_line2 || ""}\n` +
+            `${shippingAddress?.city || ""}, ${shippingAddress?.state || ""}\n` +
+            `${shippingAddress?.pincode || ""}`,
+
+          colSpan: isQtyOnly ? 2 : 3,
+
+          styles: {
+            minCellHeight: 35,
+            valign: "top",
           },
-          {
-            content: "Unit",
-            styles: {
-              fontStyle: "bold",
-              fillColor: [41, 181, 160],
-              textColor: 255,
-            },
+        },
+
+        {
+          content:
+            "PO DETAILS\n\n" +
+            `PO No : ${po.po_number}\n` +
+            `Date : ${new Date(po.created_at).toLocaleDateString("en-IN")}\n` +
+            `Status : ${po.status}\n` +
+            `Total Qty : ${Number(po.total_qty || 0).toFixed(2)}`,
+
+          colSpan: isQtyOnly ? 2 : 4,
+
+          styles: {
+            minCellHeight: 35,
+            valign: "top",
           },
-          {
-            content: "Qty",
-            styles: {
-              fontStyle: "bold",
-              fillColor: [41, 181, 160],
-              textColor: 255,
-            },
-          },
-          {
-            content: "Rate",
-            styles: {
-              fontStyle: "bold",
-              fillColor: [41, 181, 160],
-              textColor: 255,
-            },
-          },
-          {
-            content: "Tax %",
-            styles: {
-              fontStyle: "bold",
-              fillColor: [41, 181, 160],
-              textColor: 255,
-            },
-          },
-          {
-            content: "Amount",
-            styles: {
-              fontStyle: "bold",
-              fillColor: [41, 181, 160],
-              textColor: 255,
-            },
-          },
-        ],
-      ];
+        },
+      ]);
+
+      // =====================================================
+      // ITEM HEADER
+      // =====================================================
+      if (isQtyOnly) {
+        body.push(["Code", "Item", "Unit", "Qty"]);
+      } else {
+        body.push(["Code", "Item", "Unit", "Qty", "Rate", "Tax %", "Amount"]);
+      }
 
       // =====================================================
       // ITEMS
       // =====================================================
       items.forEach((item) => {
-        body.push([
-          item.product_code || "",
-          item.product_name || "",
-          item.unit || "",
-          Number(item.qty || 0).toFixed(2),
-          Number(item.rate || 0).toFixed(2),
-          Number(item.tax || 0).toFixed(2),
-          Number(item.amount || 0).toFixed(2),
-        ]);
+        if (isQtyOnly) {
+          body.push([
+            item.product_code || "",
+            item.product_name || "",
+            item.unit || "",
+            Number(item.qty || 0).toFixed(2),
+          ]);
+        } else {
+          body.push([
+            item.product_code || "",
+            item.product_name || "",
+            item.unit || "",
+            Number(item.qty || 0).toFixed(2),
+            Number(item.rate || 0).toFixed(2),
+            Number(item.tax || 0).toFixed(2),
+            Number(item.amount || 0).toFixed(2),
+          ]);
+        }
       });
 
       // =====================================================
-      // NOTES + TOTALS
+      // TOTALS
       // =====================================================
-      body.push(
-        [
-          {
-            content: `NOTES\n\n${po.notes || "-"}`,
-            colSpan: 5,
-            rowSpan: 3,
-            styles: {
-              minCellHeight: 28,
-              valign: "top",
+      if (!isQtyOnly) {
+        body.push(
+          [
+            {
+              content: `NOTES\n\n${po.notes || "-"}`,
+              colSpan: 5,
+              rowSpan: 3,
             },
-          },
-
-          {
-            content: "Subtotal",
-            styles: {
-              fontStyle: "bold",
-            },
-          },
-
-          {
-            content: subtotal.toLocaleString("en-IN"),
-            styles: {
-              halign: "right",
-            },
-          },
-        ],
-
-        [
-          {
-            content: "Tax",
-            styles: {
-              fontStyle: "bold",
-            },
-          },
-
-          {
-            content: totalTax.toLocaleString("en-IN"),
-            styles: {
-              halign: "right",
-            },
-          },
-        ],
-
-        [
-          {
-            content: "Grand Total",
-            styles: {
-              fontStyle: "bold",
-            },
-          },
-
-          {
-            content: grandTotal.toLocaleString("en-IN"),
-            styles: {
-              halign: "right",
-              fontStyle: "bold",
-            },
-          },
-        ],
-      );
+            "Subtotal",
+            subtotal.toFixed(2),
+          ],
+          ["Tax", totalTax.toFixed(2)],
+          ["Grand Total", grandTotal.toFixed(2)],
+        );
+      }
 
       // =====================================================
       // SIGNATURE
@@ -544,48 +491,33 @@ export default function PurchaseOrdersTable() {
       body.push([
         {
           content: "\n\nPrepared By",
-          colSpan: 5,
+          colSpan: isQtyOnly ? 2 : 5,
           styles: {
-            minCellHeight: 22,
+            minCellHeight: 25,
             valign: "bottom",
           },
         },
-
         {
           content: "\n\n____________________\nAuthorized Signature",
-          colSpan: 2,
+          colSpan: isQtyOnly ? 2 : 2,
           styles: {
             halign: "center",
             valign: "bottom",
-            minCellHeight: 22,
+            minCellHeight: 25,
           },
         },
       ]);
 
       // =====================================================
-      // MAIN TABLE
+      // TABLE
       // =====================================================
       autoTable(doc, {
         startY: 40,
         theme: "grid",
-
         body,
-
         styles: {
           fontSize: 9,
           cellPadding: 3,
-          lineWidth: 0.2,
-          valign: "middle",
-        },
-
-        columnStyles: {
-          0: { cellWidth: 18 },
-          1: { cellWidth: 60 },
-          2: { cellWidth: 18 },
-          3: { cellWidth: 18 },
-          4: { cellWidth: 22 },
-          5: { cellWidth: 22 },
-          6: { cellWidth: 32 },
         },
       });
 
@@ -606,15 +538,11 @@ export default function PurchaseOrdersTable() {
       // =====================================================
       // FILE NAME
       // =====================================================
-      const poSuffix =
-        po.po_number?.match(/\d+$/)?.[0] || po.po_number?.slice(-4) || po.id;
-
       const supplierName = (vendor.vendor_name || "Vendor")
         .replace(/[^\w\s-]/g, "")
-        .replace(/\s+/g, "-")
-        .trim();
+        .replace(/\s+/g, "-");
 
-      doc.save(`${poSuffix}-${supplierName}.pdf`);
+      doc.save(`${po.po_number}-${supplierName}.pdf`);
     } catch (error) {
       console.error("Purchase Order PDF Error:", error);
 
@@ -626,7 +554,9 @@ export default function PurchaseOrdersTable() {
     try {
       setLoadingPO(true);
 
+      // ==========================
       // PO
+      // ==========================
       const { data: po, error: poError } = await supabase
         .schema("purchase")
         .from("purchase_orders")
@@ -636,14 +566,33 @@ export default function PurchaseOrdersTable() {
 
       if (poError) throw poError;
 
+      // ==========================
       // Vendor
+      // ==========================
       const { data: vendor } = await supabase
         .from("vendors")
         .select("*")
         .eq("id", po.supplier_id)
         .single();
 
+      // ==========================
+      // Shipping Address
+      // ==========================
+      let shippingAddress = null;
+
+      if (po.shipping_address_id) {
+        const { data } = await supabase
+          .from("company_addresses")
+          .select("*")
+          .eq("id", po.shipping_address_id)
+          .single();
+
+        shippingAddress = data;
+      }
+
+      // ==========================
       // Items
+      // ==========================
       const { data: items } = await supabase
         .schema("purchase")
         .from("purchase_order_items")
@@ -654,6 +603,7 @@ export default function PurchaseOrdersTable() {
       setSelectedPO({
         po,
         vendor,
+        shippingAddress,
         items: items || [],
       });
 
@@ -685,6 +635,7 @@ export default function PurchaseOrdersTable() {
     try {
       if (shipment.lr_number) {
         await navigator.clipboard.writeText(shipment.lr_number);
+        
         message.success("LR number copied to clipboard");
       }
 
@@ -728,13 +679,7 @@ export default function PurchaseOrdersTable() {
       // BUILD TRACKING URL
       // =========================
 
-      let trackingUrl = null;
-
-      if (transporter?.tracking_base_url && shipmentForm.lr_number?.trim()) {
-        trackingUrl =
-          transporter.tracking_base_url + shipmentForm.lr_number.trim();
-      }
-
+    const trackingUrl = transporter?.tracking_base_url ?? null;
       // =========================
       // SAVE SHIPMENT
       // =========================
@@ -844,7 +789,7 @@ export default function PurchaseOrdersTable() {
                     }}
                     onView={() => handleView(po.id)}
                     onPrint={() => handlePrint(po.id)}
-                    onEdit={() => console.log("Edit PO:", po.id)}
+                    onEdit={() => router.push(`/purchase/editpo/${po.id}`)}
                     onDelete={() => handleDelete(po.id)}
                     onLogistics={() => openLogisticsModal(po)}
                   />

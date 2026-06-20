@@ -3,12 +3,16 @@
 import { useState } from "react";
 import { Select, Modal, Input, Divider, Button } from "antd";
 import { Building2, Plus } from "lucide-react";
+import { supabase } from "../../../lib/supabase";
+
+
 
 export default function PartySelection({
   suppliers,
   loadingSuppliers,
   value,
   onChange,
+  refreshSuppliers,
 }) {
   const [tempSupplierModalOpen, setTempSupplierModalOpen] = useState(false);
 
@@ -17,27 +21,65 @@ export default function PartySelection({
   });
 
   const selectedSupplier = value;
+const generateVendorCode = async () => {
+  const { data, error } = await supabase
+    .from("vendors")
+    .select("vendor_id")
+    .order("id", { ascending: false })
+    .limit(1)
+    .single();
 
-  const handleAddTemporarySupplier = () => {
-    if (!tempSupplier.name.trim()) return;
+  if (error && error.code !== "PGRST116") {
+    throw error;
+  }
 
-    const supplier = {
-      id: `TEMP-${Date.now()}`,
-      name: tempSupplier.name,
-      code: "TEMP",
-      vendorUnder: "Temporary Supplier",
-      temporary: true,
-    };
+  const lastCode = data?.vendor_id || "VID0000";
 
-    onChange(supplier);
+  const lastNumber = Number(
+    lastCode.replace("VID", "")
+  );
 
-    setTempSupplier({
-      name: "",
+  const nextNumber = lastNumber + 1;
+
+  return `VID${String(nextNumber).padStart(4, "0")}`;
+};
+
+
+const handleAddTemporarySupplier = async () => {
+  if (!tempSupplier.name.trim()) return;
+
+  try {
+    const vendorCode = await generateVendorCode();
+
+    const { data, error } = await supabase
+      .from("vendors")
+      .insert({
+        vendor_id: vendorCode,
+        vendor_name: tempSupplier.name,
+        vendor_under: "Sundry Creditors",
+        status: "Active",
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    onChange({
+      id: data.id,
+      name: data.vendor_name,
+      code: data.vendor_id,
+      vendorUnder: data.vendor_under,
     });
 
-    setTempSupplierModalOpen(false);
-  };
+    await refreshSuppliers();
 
+    setTempSupplier({ name: "" });
+    setTempSupplierModalOpen(false);
+  } catch (err) {
+    console.error(err);
+    alert("Unable to create supplier");
+  }
+};
   return (
     <>
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm mt-2">
@@ -79,6 +121,12 @@ export default function PartySelection({
                 className="w-full"
                 placeholder="Search supplier..."
                 loading={loadingSuppliers}
+                optionFilterProp="label"
+                filterOption={(input, option) =>
+                  (option?.label ?? "")
+                    .toLowerCase()
+                    .includes(input.toLowerCase())
+                }
                 value={
                   selectedSupplier
                     ? {
@@ -88,30 +136,39 @@ export default function PartySelection({
                     : undefined
                 }
                 onChange={(option) => {
+                  if (option.value === "__add_new_supplier__") {
+                    setTempSupplierModalOpen(true);
+                    return;
+                  }
+
                   const supplier = suppliers.find(
-                    (s) => String(s.id) === String(option.value)
+                    (s) => String(s.id) === String(option.value),
                   );
 
                   onChange(supplier);
                 }}
-                options={suppliers.map((supplier) => ({
-                  value: supplier.id,
-                  label: supplier.name,
-                }))}
                 popupRender={(menu) => (
                   <>
                     {menu}
-                    <Divider style={{ margin: 0 }} />
+
+                    <Divider style={{ margin: "8px 0" }} />
+
                     <div
-                      className="px-4 py-3 cursor-pointer hover:bg-slate-50 flex items-center gap-2 text-blue-600"
+                      className="px-3 py-2 cursor-pointer flex items-center gap-2 text-blue-600 hover:bg-slate-50"
                       onMouseDown={(e) => e.preventDefault()}
                       onClick={() => setTempSupplierModalOpen(true)}
                     >
                       <Plus size={16} />
-                      Add Temporary Supplier
+                      Add New Supplier
                     </div>
                   </>
                 )}
+                options={[
+                  ...suppliers.map((supplier) => ({
+                    value: supplier.id,
+                    label: supplier.name,
+                  })),
+                ]}
               />
 
               {selectedSupplier?.vendorUnder === "Sundry Debtors" && (
@@ -141,7 +198,7 @@ export default function PartySelection({
       </div>
 
       <Modal
-        title="Add Temporary Supplier"
+        title="Add New Supplier"
         open={tempSupplierModalOpen}
         footer={null}
         onCancel={() => setTempSupplierModalOpen(false)}
@@ -165,7 +222,7 @@ export default function PartySelection({
             </Button>
 
             <Button type="primary" onClick={handleAddTemporarySupplier}>
-              Add Supplier
+              Create Supplier
             </Button>
           </div>
         </div>
