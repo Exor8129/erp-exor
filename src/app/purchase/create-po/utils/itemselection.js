@@ -43,8 +43,6 @@ export default function ProductSelection({
     setSalesTrendModalOpen(true);
   };
 
-
-
   // Financial Calculations
   const totals = useMemo(() => {
     return items.reduce(
@@ -181,12 +179,24 @@ export default function ProductSelection({
                   if (record.isGhost) {
                     addItem(product);
                   } else {
+                    const firstConversion = product.conversions?.[0];
+
                     updateItem(record.id, {
                       productId: product.id,
                       productName: product.name,
+
                       unit: product.unit,
-                      purchaseUom: product.purchaseUnit,
-                      conversionFactor: product.conversionFactor || 1,
+
+                      conversions: product.conversions || [],
+
+                      purchaseUom: firstConversion
+                        ? firstConversion.from_unit
+                        : product.unit,
+
+                      conversionFactor: firstConversion
+                        ? Number(firstConversion.factor)
+                        : 1,
+
                       hsn: product.hsn,
                       tax: product.tax || 0,
                       rate: product.basePrice || 0,
@@ -195,7 +205,8 @@ export default function ProductSelection({
                 }}
                 options={productOptions.map((p) => ({
                   value: p.id,
-                  label: `${p.name} (${p.code || p.id})`,
+                  // CHANGED HERE: Directly outputs "Product Name (ID)"
+                  label: `${p.name} (${p.code})`,
                 }))}
                 popupRender={(menu) => (
                   <>
@@ -261,15 +272,45 @@ export default function ProductSelection({
       },
       {
         title: "Unit",
-        width: 140,
-        render: (_, record) => (
-          <div
-            className="cursor-pointer min-h-9.5 flex items-center text-slate-500 px-2"
-            onClick={() => !record.isGhost && setActiveRowId(record.id)}
-          >
-            {record.purchaseUom || (record.isGhost ? "" : "-")}
-          </div>
-        ),
+        width: 150,
+
+        render: (_, record) => {
+          if (record.isGhost) return null;
+
+          // No conversions → just display base unit
+          if (!record.conversions?.length) {
+            return <div className="px-2">{record.unit}</div>;
+          }
+
+          return (
+            <Select
+              className="w-full"
+              value={record.purchaseUom}
+              options={[
+                ...record.conversions.map((c) => ({
+                  value: c.from_unit,
+                  label: c.from_unit,
+                })),
+
+                {
+                  value: record.unit,
+                  label: record.unit,
+                },
+              ]}
+              onChange={(value) => {
+                const selected = record.conversions.find(
+                  (c) => c.from_unit === value,
+                );
+
+                updateItem(record.id, {
+                  purchaseUom: value,
+
+                  conversionFactor: selected ? Number(selected.factor) : 1,
+                });
+              }}
+            />
+          );
+        },
       },
       ...(showPricing
         ? [

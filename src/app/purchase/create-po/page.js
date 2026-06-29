@@ -151,7 +151,7 @@ export default function CreatePOPage({
     }
   }, [mode]);
 
-  const loadPO = async () => {
+const loadPO = async () => {
     try {
       const { data: poHeader, error: headerError } = await supabase
         .schema("purchase")
@@ -185,20 +185,29 @@ export default function CreatePOPage({
 
       setSelectedVendor(supplier);
 
+      // =======================================================
+      // FIXED: Map conversion fields into component row state
+      // =======================================================
       setItems(
         poItems.map((item) => ({
           id: item.id,
           productId: item.product_id,
           productName: item.product_name,
           qty: item.qty,
-          purchaseUom: item.unit,
           rate: item.rate,
           tax: item.tax,
           hsn: item.product_code,
+          
+          // These two were missing from your state payload map:
+          purchaseUom: item.unit || "", 
+          conversionFactor: Number(item.conversion_factor ?? 1),
+          
+          // Also fetch available item master unit options for drop-downs if applicable
+          conversions: productOptions.find((p) => p.id === item.product_id)?.conversions || []
         })),
       );
     } catch (err) {
-      console.error(err);
+      console.error("Error hydrating PO data for edit mode:", err);
     }
   };
 
@@ -330,16 +339,20 @@ export default function CreatePOPage({
       .from("item_master")
       .select(
         `
-        id,
-        item_name,
-        guid,
-        alter_id,
-        uom,
-        purchase_unit,
-        conversion_factor,
-        hsn,
-        tax
-      `,
+    id,
+    item_name,
+    guid,
+    alter_id,
+    uom,
+    hsn,
+    tax,
+
+    item_unit_conversions(
+        from_unit,
+        to_unit,
+        factor
+    )
+`,
       )
       .eq("status", true)
       .order("item_name", { ascending: true });
@@ -353,12 +366,14 @@ export default function CreatePOPage({
     const formatted = (data || []).map((item) => ({
       id: item.id,
       name: item.item_name || "",
-      code: item.alter_id
-        ? String(item.alter_id)
-        : item.guid || `ITEM-${item.id}`,
+      code: String(item.id),
+
+      // Base stock unit
       unit: item.uom || "Nos",
-      purchaseUnit: item.purchase_unit || item.uom || "Nos",
-      conversionFactor: item.conversion_factor || 1,
+
+      // All available conversions
+      conversions: item.item_unit_conversions || [],
+
       hsn: item.hsn || "",
       tax: item.tax || "",
     }));
@@ -411,15 +426,32 @@ export default function CreatePOPage({
 
   // Grid Controls
   const addItem = (initialProduct = null) => {
+    const firstConversion = initialProduct?.conversions?.[0];
+
     const newRow = {
       ...createEmptyRow(),
+
       ...(initialProduct
         ? {
             productId: initialProduct.id,
             productName: initialProduct.name,
+
+            // Base stock unit
             unit: initialProduct.unit,
-            purchaseUom: initialProduct.purchaseUnit,
-            conversionFactor: initialProduct.conversionFactor || 1,
+
+            // Store all available conversions for this product
+            conversions: initialProduct.conversions || [],
+
+            // Default purchase unit
+            purchaseUom: firstConversion
+              ? firstConversion.from_unit
+              : initialProduct.unit,
+
+            // Default conversion factor
+            conversionFactor: firstConversion
+              ? Number(firstConversion.factor)
+              : 1,
+
             hsn: initialProduct.hsn,
             tax: initialProduct.tax || 0,
             rate: initialProduct.basePrice || 0,
@@ -550,6 +582,12 @@ export default function CreatePOPage({
 
         qty: Number(item.qty || 0),
 
+        // NEW
+        conversion_factor: Number(item.conversionFactor || 1),
+
+        // NEW
+        stock_qty: Number(item.qty || 0) * Number(item.conversionFactor || 1),
+
         rate: Number(item.rate || 0),
 
         tax: Number(item.tax || 0),
@@ -598,11 +636,7 @@ export default function CreatePOPage({
 
   const handleCreatePO = async () => {
     try {
-      await savePO(
-      mode === "edit"
-        ? "Updated"
-        : "Created"
-    );
+      await savePO(mode === "edit" ? "Updated" : "Created");
 
       if (mode === "edit") {
         alert("Purchase Order Updated");

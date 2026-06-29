@@ -12,6 +12,7 @@ import ViewPurchaseOrderModal from "./subcontents/ViewPurchaseOrderModal";
 
 const TableRow = ({
   id,
+  poId,
   vendor,
   date,
   amount,
@@ -22,6 +23,7 @@ const TableRow = ({
   onDelete,
   onPrint,
   onLogistics,
+  onCreateCPO,
 }) => (
   <tr className="hover:bg-slate-50 transition-colors group">
     <td className="px-4 py-4 font-bold text-slate-700">{id}</td>
@@ -49,19 +51,19 @@ const TableRow = ({
       <button
         onClick={onLogistics}
         className="
-      inline-flex
-      items-center
-      gap-2
-      px-3
-      py-1.5
-      rounded-full
-      bg-sky-50
-      text-sky-700
-      text-xs
-      font-semibold
-      hover:bg-sky-100
-      transition
-    "
+        inline-flex
+        items-center
+        gap-2
+        px-3
+        py-1.5
+        rounded-full
+        bg-sky-50
+        text-sky-700
+        text-xs
+        font-semibold
+        hover:bg-sky-100
+        transition
+      "
       >
         🚚{" "}
         {logistics?.shipmentCount > 0
@@ -74,6 +76,21 @@ const TableRow = ({
 
     <td className="px-4 py-4">
       <div className="flex items-center gap-3">
+        <button
+          title="Create Corrected Purchase Order"
+          style={{ color: "gray" }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.color = "purple";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.color = "gray";
+          }}
+          onClick={onCreateCPO}
+        >
+          <div className="w-6 h-6 border border-current rounded-full flex items-center justify-center text-[8px] font-bold">
+            CPO
+          </div>
+        </button>
         {/* VIEW */}
         <button
           onClick={onView}
@@ -114,8 +131,6 @@ const TableRow = ({
   </tr>
 );
 
-
-
 export default function PurchaseOrdersTable() {
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -130,7 +145,6 @@ export default function PurchaseOrdersTable() {
 
   const router = useRouter();
 
-
   useEffect(() => {
     fetchTransporters();
   }, []);
@@ -144,6 +158,7 @@ export default function PurchaseOrdersTable() {
 
     setTransporters(data || []);
   };
+
   const [shipmentForm, setShipmentForm] = useState({
     transporter_id: null,
     lr_number: "",
@@ -153,6 +168,7 @@ export default function PurchaseOrdersTable() {
     shipment_status: "Pending Dispatch",
     remarks: "",
   });
+
   useEffect(() => {
     fetchPurchaseOrders();
     fetchTransporters();
@@ -190,7 +206,8 @@ export default function PurchaseOrdersTable() {
         created_at,
         supplier_id,
         shipping_address_id,
-        qty_only_mode
+        qty_only_mode,
+        shipments(count)
       `,
       )
       .order("created_at", { ascending: false });
@@ -226,6 +243,7 @@ export default function PurchaseOrdersTable() {
     const merged = (poData || []).map((po) => ({
       ...po,
       vendor_name: vendorMap[po.supplier_id] || "-",
+      shipment_count: po.shipments?.[0]?.count || 0,
     }));
 
     setPurchaseOrders(merged);
@@ -245,11 +263,6 @@ export default function PurchaseOrdersTable() {
 
     if (error) {
       console.log("FULL ERROR:", error);
-      console.log("MESSAGE:", error?.message);
-      console.log("DETAILS:", error?.details);
-      console.log("HINT:", error?.hint);
-      console.log("CODE:", error?.code);
-
       alert(error?.message || "Delete failed");
       return;
     }
@@ -257,11 +270,26 @@ export default function PurchaseOrdersTable() {
     setPurchaseOrders((prev) => prev.filter((po) => po.id !== id));
   };
 
+  const formatItem = (item) => {
+    const qty = Number(item.qty || 0);
+    const factor = Number(item.conversion_factor ?? item.conversionFactor ?? 1);
+    const purchaseUnit = item.purchase_unit || item.purchaseUnit || "";
+    const unit = item.unit || "";
+    const convertedQty = qty * factor;
+
+    return {
+      ...item,
+      baseQty: qty,
+      conversionFactor: factor,
+      convertedQty,
+      purchaseUnit,
+      unit,
+      hasConversion: factor > 1,
+    };
+  };
+
   const handlePrint = async (poId) => {
     try {
-      // =====================================================
-      // FETCH PO
-      // =====================================================
       const { data: po, error: poError } = await supabase
         .schema("purchase")
         .from("purchase_orders")
@@ -271,9 +299,6 @@ export default function PurchaseOrdersTable() {
 
       if (poError) throw poError;
 
-      // =====================================================
-      // FETCH VENDOR
-      // =====================================================
       const { data: vendor, error: vendorError } = await supabase
         .from("vendors")
         .select("*")
@@ -282,25 +307,19 @@ export default function PurchaseOrdersTable() {
 
       if (vendorError) throw vendorError;
 
-      // =====================================================
-      // FETCH SHIPPING ADDRESS
-      // =====================================================
       let shippingAddress = null;
-
       if (po.shipping_address_id) {
-        const { data } = await supabase
+        const { data: addrData, error: addrError } = await supabase
           .from("company_addresses")
           .select("*")
           .eq("id", po.shipping_address_id)
           .single();
 
-        shippingAddress = data;
+        if (addrError) throw addrError;
+        shippingAddress = addrData;
       }
 
-      // =====================================================
-      // FETCH ITEMS
-      // =====================================================
-      const { data: items, error: itemsError } = await supabase
+      const { data: rawItems, error: itemsError } = await supabase
         .schema("purchase")
         .from("purchase_order_items")
         .select("*")
@@ -309,95 +328,84 @@ export default function PurchaseOrdersTable() {
 
       if (itemsError) throw itemsError;
 
-      const isQtyOnly = po.qty_only_mode === true;
+      const productIds = Array.from(
+        new Set((rawItems || []).map((i) => i.product_id).filter(Boolean)),
+      );
 
-      // =====================================================
-      // CALCULATIONS
-      // =====================================================
-      const subtotal = items.reduce(
+      let itemMasterMap = {};
+      if (productIds.length > 0) {
+        const { data: masterData, error: masterError } = await supabase
+          .from("item_master")
+          .select("id, uom")
+          .in("id", productIds);
+
+        if (masterError) throw masterError;
+
+        (masterData || []).forEach((row) => {
+          itemMasterMap[row.id] = row.uom;
+        });
+      }
+
+      const integratedItems = (rawItems || []).map((item) => ({
+        ...item,
+        item_master: item.product_id
+          ? { uom: itemMasterMap[item.product_id] || "" }
+          : null,
+      }));
+
+      const formattedItems = integratedItems.map(formatItem);
+
+      const subtotal = formattedItems.reduce(
         (sum, item) => sum + Number(item.amount || 0),
         0,
       );
-
-      const totalTax = items.reduce(
+      const totalTax = formattedItems.reduce(
         (sum, item) =>
           sum + (Number(item.amount || 0) * Number(item.tax || 0)) / 100,
         0,
       );
-
       const grandTotal = subtotal + totalTax;
 
-      // =====================================================
-      // PDF
-      // =====================================================
       const doc = new jsPDF("p", "mm", "a4");
-
       const pageWidth = doc.internal.pageSize.getWidth();
 
-      // =====================================================
-      // HEADER
-      // =====================================================
       doc.setFont("helvetica", "bold");
       doc.setFontSize(18);
       doc.text("Exor Medical Systems", 14, 18);
 
       doc.setFont("helvetica", "normal");
       doc.setFontSize(9);
-
       doc.text("Purchase Department", 14, 24);
       doc.text("Kerala, India", 14, 29);
 
       doc.setFont("helvetica", "bold");
       doc.setFontSize(20);
-
       doc.text("PURCHASE ORDER", pageWidth - 14, 18, { align: "right" });
 
       doc.setFontSize(11);
-
       doc.text(`PO No : ${po.po_number}`, pageWidth - 14, 26, {
         align: "right",
       });
 
-      // =====================================================
-      // BODY
-      // =====================================================
       const body = [];
 
-      // =====================================================
-      // BILL TO / VENDOR
-      // =====================================================
       body.push([
         {
-          content: "BILL TO\n\n" + "Exor Medical Systems\n" + "Kerala, India",
-
-          colSpan: isQtyOnly ? 2 : 3,
-
-          styles: {
-            minCellHeight: 30,
-            valign: "top",
-            fontStyle: "bold",
-          },
+          content: "BILL TO\n\nExor Medical Systems\nKerala, India",
+          colSpan: po.qty_only_mode === true ? 2 : 3,
+          styles: { minCellHeight: 30, valign: "top", fontStyle: "bold" },
         },
-
         {
           content:
             "VENDOR\n\n" +
             `${vendor.vendor_name || ""}\n` +
             `${vendor.address || ""}\n` +
             `${vendor.mobile_number || ""}`,
-
-          colSpan: isQtyOnly ? 2 : 4,
-
-          styles: {
-            minCellHeight: 30,
-            valign: "top",
-          },
+          colSpan: po.qty_only_mode === true ? 2 : 4,
+          styles: { minCellHeight: 30, valign: "top" },
         },
       ]);
 
-      // =====================================================
-      // SHIP TO
-      // =====================================================
       body.push([
         {
           content:
@@ -407,15 +415,9 @@ export default function PurchaseOrdersTable() {
             `${shippingAddress?.address_line2 || ""}\n` +
             `${shippingAddress?.city || ""}, ${shippingAddress?.state || ""}\n` +
             `${shippingAddress?.pincode || ""}`,
-
-          colSpan: isQtyOnly ? 2 : 3,
-
-          styles: {
-            minCellHeight: 35,
-            valign: "top",
-          },
+          colSpan: po.qty_only_mode === true ? 2 : 3,
+          styles: { minCellHeight: 35, valign: "top" },
         },
-
         {
           content:
             "PO DETAILS\n\n" +
@@ -423,60 +425,77 @@ export default function PurchaseOrdersTable() {
             `Date : ${new Date(po.created_at).toLocaleDateString("en-IN")}\n` +
             `Status : ${po.status}\n` +
             `Total Qty : ${Number(po.total_qty || 0).toFixed(2)}`,
-
-          colSpan: isQtyOnly ? 2 : 4,
-
-          styles: {
-            minCellHeight: 35,
-            valign: "top",
-          },
+          colSpan: po.qty_only_mode === true ? 2 : 4,
+          styles: { minCellHeight: 35, valign: "top" },
         },
       ]);
 
-      // =====================================================
-      // ITEM HEADER
-      // =====================================================
-      if (isQtyOnly) {
-        body.push(["Code", "Item", "Unit", "Qty"]);
+      if (po.qty_only_mode === true) {
+        body.push(["Code", "Item", "Pur Unit", "Qty", "Conversion Mapping"]);
       } else {
-        body.push(["Code", "Item", "Unit", "Qty", "Rate", "Tax %", "Amount"]);
+        body.push([
+          "Code",
+          "Item",
+          "Pur Unit",
+          "Qty",
+          "Rate",
+          "Tax %",
+          "Amount / Conversion",
+        ]);
       }
 
-      // =====================================================
-      // ITEMS
-      // =====================================================
-      items.forEach((item) => {
-        if (isQtyOnly) {
+      const productRowOffset = body.length;
+      const activeLabels = [];
+
+      formattedItems.forEach((item) => {
+        const conversionString = item.hasConversion
+          ? `${Number(item.baseQty).toFixed(2)} ${item.purchaseUnit} = ${Number(item.convertedQty).toFixed(2)} ${item.unit}`
+          : `1 ${item.unit} = 1 ${item.unit}`;
+
+        const cf = Number(item.conversion_factor || 1);
+        const qty = Number(item.qty || 1);
+        const uomText = item.item_master?.uom || "UOM";
+
+        let dynamicLabelText = "";
+        let namePlaceholder = item.product_name || "";
+
+        if (cf > 1) {
+          const totalConvertedBase = (qty * cf).toFixed(2);
+          dynamicLabelText = `${qty} ${item.unit || "Unit"} = ${totalConvertedBase} ${uomText}`;
+          namePlaceholder += "\n ";
+        }
+
+        activeLabels.push(dynamicLabelText);
+
+        if (po.qty_only_mode === true) {
           body.push([
             item.product_code || "",
-            item.product_name || "",
-            item.unit || "",
+            namePlaceholder,
+            item.purchaseUnit || item.unit || "",
             Number(item.qty || 0).toFixed(2),
+            conversionString,
           ]);
         } else {
+          const amountDisplay = item.hasConversion
+            ? `${Number(item.amount || 0).toFixed(2)}\n(${conversionString})`
+            : Number(item.amount || 0).toFixed(2);
+
           body.push([
             item.product_code || "",
-            item.product_name || "",
-            item.unit || "",
+            namePlaceholder,
+            item.purchaseUnit || item.unit || "",
             Number(item.qty || 0).toFixed(2),
             Number(item.rate || 0).toFixed(2),
             Number(item.tax || 0).toFixed(2),
-            Number(item.amount || 0).toFixed(2),
+            amountDisplay,
           ]);
         }
       });
 
-      // =====================================================
-      // TOTALS
-      // =====================================================
-      if (!isQtyOnly) {
+      if (po.qty_only_mode !== true) {
         body.push(
           [
-            {
-              content: `NOTES\n\n${po.notes || "-"}`,
-              colSpan: 5,
-              rowSpan: 3,
-            },
+            { content: `NOTES\n\n${po.notes || "-"}`, colSpan: 5, rowSpan: 3 },
             "Subtotal",
             subtotal.toFixed(2),
           ],
@@ -485,68 +504,60 @@ export default function PurchaseOrdersTable() {
         );
       }
 
-      // =====================================================
-      // SIGNATURE
-      // =====================================================
       body.push([
         {
           content: "\n\nPrepared By",
-          colSpan: isQtyOnly ? 2 : 5,
-          styles: {
-            minCellHeight: 25,
-            valign: "bottom",
-          },
+          colSpan: po.qty_only_mode === true ? 2 : 5,
+          styles: { minCellHeight: 25, valign: "bottom" },
         },
         {
           content: "\n\n____________________\nAuthorized Signature",
-          colSpan: isQtyOnly ? 2 : 2,
-          styles: {
-            halign: "center",
-            valign: "bottom",
-            minCellHeight: 25,
-          },
+          colSpan: po.qty_only_mode === true ? 2 : 2,
+          styles: { halign: "center", valign: "bottom", minCellHeight: 25 },
         },
       ]);
 
-      // =====================================================
-      // TABLE
-      // =====================================================
       autoTable(doc, {
         startY: 40,
         theme: "grid",
         body,
-        styles: {
-          fontSize: 9,
-          cellPadding: 3,
+        styles: { fontSize: 9, cellPadding: 3 },
+        didDrawCell: (data) => {
+          if (
+            data.row.index >= productRowOffset &&
+            data.row.index < productRowOffset + formattedItems.length &&
+            data.column.index === 1
+          ) {
+            const itemRelativeIndex = data.row.index - productRowOffset;
+            const targetString = activeLabels[itemRelativeIndex];
+
+            if (targetString) {
+              doc.saveGraphicsState();
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(7.5);
+              doc.setTextColor(115, 103, 240);
+
+              const indentX = data.cell.x + 4;
+              const textY = data.cell.y + data.cell.height - 4;
+
+              doc.text(targetString, indentX, textY);
+              doc.restoreGraphicsState();
+            }
+          }
         },
       });
 
-      // =====================================================
-      // FOOTER
-      // =====================================================
       doc.setFontSize(8);
-
       doc.text(
         "Generated from Purchase Management System",
         pageWidth / 2,
         290,
-        {
-          align: "center",
-        },
+        { align: "center" },
       );
 
-      // =====================================================
-      // FILE NAME
-      // =====================================================
-      const supplierName = (vendor.vendor_name || "Vendor")
-        .replace(/[^\w\s-]/g, "")
-        .replace(/\s+/g, "-");
-
-      doc.save(`${po.po_number}-${supplierName}.pdf`);
+      doc.save(`${po.po_number}-${vendor.vendor_name || "Vendor"}.pdf`);
     } catch (error) {
-      console.error("Purchase Order PDF Error:", error);
-
-      alert("Failed to generate Purchase Order PDF");
+      alert("Failed to generate Purchase Order PDF.");
     }
   };
 
@@ -554,9 +565,6 @@ export default function PurchaseOrdersTable() {
     try {
       setLoadingPO(true);
 
-      // ==========================
-      // PO
-      // ==========================
       const { data: po, error: poError } = await supabase
         .schema("purchase")
         .from("purchase_orders")
@@ -566,20 +574,13 @@ export default function PurchaseOrdersTable() {
 
       if (poError) throw poError;
 
-      // ==========================
-      // Vendor
-      // ==========================
       const { data: vendor } = await supabase
         .from("vendors")
         .select("*")
         .eq("id", po.supplier_id)
         .single();
 
-      // ==========================
-      // Shipping Address
-      // ==========================
       let shippingAddress = null;
-
       if (po.shipping_address_id) {
         const { data } = await supabase
           .from("company_addresses")
@@ -590,21 +591,47 @@ export default function PurchaseOrdersTable() {
         shippingAddress = data;
       }
 
-      // ==========================
-      // Items
-      // ==========================
-      const { data: items } = await supabase
+      // Fetch line items directly from the purchase schema
+      const { data: rawItems } = await supabase
         .schema("purchase")
         .from("purchase_order_items")
         .select("*")
         .eq("po_id", poId)
         .order("created_at");
 
+      // Extract unique non-null product IDs for cross-schema optimization
+      const productIds = Array.from(
+        new Set((rawItems || []).map((i) => i.product_id).filter(Boolean)),
+      );
+
+      let itemMasterMap = {};
+      if (productIds.length > 0) {
+        const { data: masterData } = await supabase
+          .from("item_master") // Defaults to public schema
+          .select("id, uom")
+          .in("id", productIds);
+
+        // Convert lookup array to a hashmap
+        (masterData || []).forEach((row) => {
+          itemMasterMap[row.id] = row.uom;
+        });
+      }
+
+      // Attach item_master context dynamically to mirror the required schema structure
+      const integratedItems = (rawItems || []).map((item) => ({
+        ...item,
+        item_master: item.product_id
+          ? { uom: itemMasterMap[item.product_id] || "" }
+          : null,
+      }));
+
+      const formattedItems = integratedItems.map(formatItem);
+
       setSelectedPO({
         po,
         vendor,
         shippingAddress,
-        items: items || [],
+        items: formattedItems,
       });
 
       setViewModalOpen(true);
@@ -626,33 +653,25 @@ export default function PurchaseOrdersTable() {
 
   const openLogisticsModal = async (po) => {
     setSelectedLogisticsPO(po);
-
     await fetchShipments(po.id);
-
     setLogisticsModalOpen(true);
   };
+
   const handleTrackShipment = async (shipment) => {
     try {
       if (shipment.lr_number) {
         await navigator.clipboard.writeText(shipment.lr_number);
-        
         message.success("LR number copied to clipboard");
       }
-
       window.open(shipment.tracking_url, "_blank", "noopener,noreferrer");
     } catch (err) {
       console.error(err);
-
       window.open(shipment.tracking_url, "_blank", "noopener,noreferrer");
     }
   };
 
   const saveShipment = async () => {
     try {
-      // =========================
-      // VALIDATION
-      // =========================
-
       if (!selectedLogisticsPO?.id) {
         alert("Please select a Purchase Order");
         return;
@@ -663,10 +682,6 @@ export default function PurchaseOrdersTable() {
         return;
       }
 
-      // =========================
-      // GET TRANSPORTER
-      // =========================
-
       const { data: transporter, error: transporterError } = await supabase
         .from("transporters")
         .select("*")
@@ -675,46 +690,26 @@ export default function PurchaseOrdersTable() {
 
       if (transporterError) throw transporterError;
 
-      // =========================
-      // BUILD TRACKING URL
-      // =========================
-
-    const trackingUrl = transporter?.tracking_base_url ?? null;
-      // =========================
-      // SAVE SHIPMENT
-      // =========================
+      const trackingUrl = transporter?.tracking_base_url ?? null;
 
       const { error } = await supabase
         .schema("purchase")
         .from("shipments")
         .insert({
           po_id: selectedLogisticsPO.id,
-
           transporter_id: transporter.id,
           transporter: transporter.transporter_name,
-
           lr_number: shipmentForm.lr_number || null,
-
           shipment_status: shipmentForm.shipment_status || "Pending Dispatch",
-
           dispatch_date: shipmentForm.dispatch_date || null,
-
           expected_delivery_date: shipmentForm.expected_delivery_date || null,
-
           no_of_boxes: Number(shipmentForm.no_of_boxes || 0),
-
           weight_kg: Number(shipmentForm.weight_kg || 0),
-
           tracking_url: trackingUrl,
-
           remarks: shipmentForm.remarks?.trim() || null,
         });
 
       if (error) throw error;
-
-      // =========================
-      // RESET FORM
-      // =========================
 
       setShipmentForm({
         transporter_id: null,
@@ -729,49 +724,58 @@ export default function PurchaseOrdersTable() {
 
       alert("Shipment added successfully");
       await fetchShipments(selectedLogisticsPO.id);
+
+      // Refresh list to instantly update shipment count badge on row
+      await fetchPurchaseOrders();
       setShipmentDrawerOpen(false);
-
-      // optional
-      // fetchShipments(selectedLogisticsPO.id);
     } catch (err) {
-      console.log("FULL ERROR:", err);
-      console.log("MESSAGE:", err?.message);
-      console.log("DETAILS:", err?.details);
-      console.log("HINT:", err?.hint);
-      console.log("CODE:", err?.code);
-
+      console.log("SAVE SHIPMENT ERROR:", err);
       alert(err?.message || "Failed to save shipment");
     }
   };
+
   return (
-    <div>
-      <section className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-        <div className="p-4 border-b border-slate-50">
+   <div>
+      {/* 1. Strict Height Wrapper (Fits roughly 5-6 rows comfortably) */}
+      <div className="w-full h-95 bg-white rounded-xl shadow-sm border border-slate-100 flex flex-col overflow-hidden">
+        
+        <section className="bg-white rounded-xl shadow-sm border border-slate-100 flex flex-col overflow-hidden w-full"> 
+        
+        {/* Card Header */}
+        <div className="p-4 border-b border-slate-100 shrink-0 bg-white">
           <h2 className="font-bold text-slate-700 uppercase text-xs tracking-wider">
             Active Purchase Orders
           </h2>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">
+        {/* FORCE RESIZE USING INLINE CSS:
+          This guarantees a hard height ceiling and forces scrollbars 
+          even if Tailwind's arbitrary compilation is failing or bugged.
+        */}
+        <div 
+          style={{ height: "380px", overflowY: "auto", display: "block" }}
+          className="w-full custom-scrollbar"
+        >
+          <table className="w-full text-left text-sm border-collapse table-auto">
+            <thead className="sticky top-0 z-20 bg-slate-50 shadow-[0_1px_0_0_rgba(226,232,240,1)]">
               <tr>
-                <th className="px-4 py-3">PO #</th>
-                <th className="px-4 py-3">Vendor</th>
-                <th className="px-4 py-3">Date</th>
-                <th className="px-4 py-3">Amount</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3 ">Logistics</th>
-                <th className="px-4 py-3">Action</th>
+                <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">PO #</th>
+                <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">Vendor</th>
+                <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">Date</th>
+                <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">Amount</th>
+                <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">Status</th>
+                <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">Logistics</th>
+                <th className="px-6 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">Action</th>
               </tr>
             </thead>
 
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-slate-100 bg-white">
               {purchaseOrders.length > 0 ? (
                 purchaseOrders.map((po) => (
                   <TableRow
                     key={po.id}
                     id={po.po_number}
+                    poId={po.id}
                     vendor={po.vendor_name}
                     date={new Date(po.created_at).toLocaleDateString("en-IN")}
                     amount={
@@ -785,13 +789,16 @@ export default function PurchaseOrdersTable() {
                     }
                     status={po.status}
                     logistics={{
-                      shipmentCount: 0,
+                      shipmentCount: po.shipment_count || 0,
                     }}
                     onView={() => handleView(po.id)}
                     onPrint={() => handlePrint(po.id)}
                     onEdit={() => router.push(`/purchase/editpo/${po.id}`)}
                     onDelete={() => handleDelete(po.id)}
                     onLogistics={() => openLogisticsModal(po)}
+                    onCreateCPO={() =>
+                      router.push(`/purchase/corrected-po/${po.id}`)
+                    }
                   />
                 ))
               ) : (
@@ -805,9 +812,9 @@ export default function PurchaseOrdersTable() {
           </table>
         </div>
       </section>
+      </div>
 
       {/* View Modal */}
-
       <ViewPurchaseOrderModal
         viewModalOpen={viewModalOpen}
         setViewModalOpen={setViewModalOpen}
@@ -816,7 +823,6 @@ export default function PurchaseOrdersTable() {
       />
 
       {/* Logistics Modal */}
-
       <LogisticsModal
         logisticsModalOpen={logisticsModalOpen}
         setLogisticsModalOpen={setLogisticsModalOpen}

@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Search } from "lucide-react";
+import { Search, Settings } from "lucide-react";
 import InvoicesCard from "./utils/cards/invoices";
 import PendingPOCard from "./utils/cards/pendingpo";
 import PendingApprovalsCard from "./utils/cards/pendingapprvls";
@@ -11,26 +11,52 @@ import CreatePurchaseOrderCard from "./utils/cards/createpo.js";
 import PurchaseOrdersTable from "./utils/maincontents/activepurchaseorders";
 import PendingApprovals from "./utils/maincontents/pendingapprovals";
 import NewRequestFeed from "./utils/maincontents/newrequestfeed";
-
-
-
+import { useRouter } from "next/navigation";
 
 const PurchaseDashboard = () => {
+  const router = useRouter();
 
   return (
     <div className="min-h-screen bg-slate-50 p-6 font-sans text-slate-800">
       {/* Header */}
-      <header className="flex items-center justify-between bg-[#1e293b] p-4 rounded-t-lg text-white">
+      <header className="overflow-visible flex items-center justify-between bg-[#1e293b] p-4 rounded-t-lg text-white">
         <h1 className="text-xl font-bold tracking-tight uppercase">
           Purchase Department Dashboard
         </h1>
-        <div className="relative w-64">
-          <input
-            type="text"
-            placeholder="Search"
-            className="w-full bg-white/10 border border-white/20 rounded-md py-1.5 px-3 pl-10 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 placeholder:text-white/50"
-          />
-          <Search className="absolute left-3 top-2 w-4 h-4 text-white/60" />
+
+        <div className="flex items-center gap-3">
+          {/* Search Box */}
+          <div className="relative w-64">
+            <input
+              type="text"
+              placeholder="Search"
+              className="w-full bg-white/10 border border-white/20 rounded-md py-1.5 px-3 pl-10 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 placeholder:text-white/50"
+            />
+            <Search className="absolute left-3 top-2 w-4 h-4 text-white/60" />
+          </div>
+
+          {/* Settings Button */}
+          <button
+            onClick={() => router.push("/settings")}
+            className="
+                    p-2
+                    rounded-md
+                    bg-white/10
+                    text-white
+                    cursor-pointer
+                    transition-all
+                    duration-200
+                    hover:bg-blue-500
+                    hover:text-white
+                    hover:shadow-lg
+                    hover:shadow-blue-500/30
+                    hover:scale-110
+                    active:scale-95
+                  "
+            title="Settings"
+          >
+            <Settings className="w-5 h-5" />
+          </button>
         </div>
       </header>
 
