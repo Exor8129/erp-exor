@@ -1,6 +1,7 @@
 "use client";
 
 import { Card } from "antd";
+import dayjs from "dayjs"; // Helpful for readable dates
 
 export default function HeaderCard({ po }) {
   return (
@@ -8,17 +9,21 @@ export default function HeaderCard({ po }) {
       <div className="grid grid-cols-4 gap-6">
         <div>
           <p className="text-xs text-slate-500">PO Number</p>
-          <p className="font-semibold">{po?.po_number}</p>
+          <p className="font-semibold">{po?.po_number || "-"}</p>
         </div>
 
         <div>
           <p className="text-xs text-slate-500">Supplier</p>
-          <p className="font-semibold">{po?.supplier_name}</p>
+          {/* 👇 Updated to map to vendor_name instead of company_name */}
+          <p className="font-semibold">{po?.vendors?.vendor_name || "-"}</p>
         </div>
 
         <div>
           <p className="text-xs text-slate-500">PO Date</p>
-          <p className="font-semibold">{po?.po_date}</p>
+          {/* 👇 Standardizes your timestamp column */}
+          <p className="font-semibold">
+            {po?.created_at ? dayjs(po.created_at).format("DD-MMM-YYYY") : "-"}
+          </p>
         </div>
 
         <div>

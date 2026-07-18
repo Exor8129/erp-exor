@@ -87,8 +87,8 @@ const TableRow = ({
           }}
           onClick={onCreateCPO}
         >
-          <div className="w-6 h-6 border border-current rounded-full flex items-center justify-center text-[8px] font-bold">
-            CPO
+          <div className="w-7 h-7 border border-current rounded-full flex items-center justify-center text-[8px] font-bold">
+             -G R N- 
           </div>
         </button>
         {/* VIEW */}
@@ -797,7 +797,7 @@ export default function PurchaseOrdersTable() {
                     onDelete={() => handleDelete(po.id)}
                     onLogistics={() => openLogisticsModal(po)}
                     onCreateCPO={() =>
-                      router.push(`/purchase/corrected-po/${po.id}`)
+                      router.push(`/purchase/grn/${po.id}`)
                     }
                   />
                 ))

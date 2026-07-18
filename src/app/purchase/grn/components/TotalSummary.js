@@ -3,41 +3,39 @@
 import { Card } from "antd";
 
 export default function TotalSummary({
-  originalTotal,
-  correctedTotal,
+  orderedTotal = 0,
+  receivedTotal = 0,
+  balanceTotal = 0,
 }) {
-  const difference =
-    correctedTotal - originalTotal;
-
   return (
     <Card>
       <div className="space-y-3">
 
         <div className="flex justify-between">
-          <span>Original Total</span>
-          <span>
-            ₹ {originalTotal.toLocaleString()}
+          <span>Ordered Value</span>
+          <span className="font-medium">
+            ₹ {orderedTotal.toLocaleString()}
           </span>
         </div>
 
         <div className="flex justify-between">
-          <span>Corrected Total</span>
-          <span>
-            ₹ {correctedTotal.toLocaleString()}
+          <span>Received Value</span>
+          <span className="font-medium text-green-600">
+            ₹ {receivedTotal.toLocaleString()}
           </span>
         </div>
 
         <div className="border-t pt-2 flex justify-between font-semibold">
-          <span>Difference</span>
+          <span>Balance Value</span>
 
           <span
             className={
-              difference < 0
-                ? "text-red-600"
+              balanceTotal > 0
+                ? "text-orange-600"
                 : "text-green-600"
             }
           >
-            ₹ {difference.toLocaleString()}
+            ₹ {balanceTotal.toLocaleString()}
           </span>
         </div>
 

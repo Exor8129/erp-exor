@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Warehouse Modular Space Planner</title>
+    <!-- Fonts & Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Icons" rel="stylesheet">
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+                        mono: ['"JetBrains Mono"', 'monospace'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        :root {
+            --bg-slate-dark: #090d16;
+            --surface-card: #131b2e;
+            --border-glow: #1e294b;
+        }
+        body {
+            background-color: var(--bg-slate-dark);
+            color: #f8fafc;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+        }
+        /* Custom scrollbar matching styling rules */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #090d16;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #1e294b;
+            border-radius: 99px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #3b82f6;
+        }
+        .stencil-btn {
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .stencil-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+        }
+    </style>
+</head>
+<body class="h-screen overflow-hidden flex flex-col">
+
+    <!-- Top Navigation and Settings Header -->
+    <header class="bg-slate-950 border-b border-slate-850 px-6 py-4 flex items-center justify-between shrink-0">
+        <div class="flex items-center space-x-3">
+            <div class="p-2.5 bg-blue-600/20 text-blue-400 rounded-xl">
+                <span class="material-icons">token</span>
+            </div>
+            <div>
+                <h1 class="text-md font-bold text-slate-100 tracking-tight">SpacePlanner Pro</h1>
+                <p class="text-xs text-slate-400">Object-Based Modular Warehouse & Obstruction Designer</p>
+            </div>
+        </div>
+        <div class="flex items-center space-x-4">
+            <!-- Grid Dimension Quick Adjusts -->
+            <div class="flex items-center space-x-2 bg-slate-900 border border-slate-800 p-1.5 rounded-xl">
+                <div class="flex items-center space-x-1 px-2">
+                    <span class="text-[10px] text-slate-500 font-bold uppercase">Grid:</span>
+                    <input type="number" id="grid-cols" value="24" min="10" max="60" class="w-10 bg-transparent text-xs text-blue-400 font-mono focus:outline-none text-center">
+                    <span class="text-xs text-slate-600">x</span>
+                    <input type="number" id="grid-rows" value="16" min="8" max="40" class="w-10 bg-transparent text-xs text-blue-400 font-mono focus:outline-none text-center">
+                </div>
+                <button id="btn-resize-grid" class="bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-semibold px-2.5 py-1 rounded-lg transition">Apply</button>
+            </div>
+
+            <span class="text-xs px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium flex items-center gap-1.5">
+                <span class="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span> Modular Editor Active
+            </span>
+        </div>
+    </header>
+
+    <main class="flex-1 flex overflow-hidden">
+        
+        <!-- Left Control Sidebar -->
+        <section class="w-80 bg-slate-950 border-r border-slate-900 flex flex-col overflow-y-auto shrink-0 p-6 space-y-6">
+            
+            <!-- Asset Placement Library -->
+            <div>
+                <div class="flex items-center justify-between mb-4">
+                    <div class="flex items-center space-x-2">
+                        <span class="material-icons text-blue-400 text-sm">widgets</span>
+                        <h2 class="text-xs font-bold text-slate-400 uppercase tracking-wider">1. Modular Library</h2>
+                    </div>
+                </div>
+                
+                <p class="text-[11px] text-slate-400 mb-3">Select a modular stencil below, rotate it, and stamp it anywhere on the grid floor. Other assets cannot occupy structural obstructions.</p>
+
+                <!-- Stencil Cards List -->
+                <div class="space-y-3">
+                    <!-- Standard Rack Block -->
+                    <div id="stencil-rack" class="stencil-btn flex items-center justify-between p-3 rounded-xl bg-slate-900 border border-slate-800 hover:border-blue-500/50 cursor-pointer active-stencil" onclick="selectStencil('Rack')">
+                        <div class="flex items-center space-x-3">
+                            <span class="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
+                                <span class="material-icons text-lg">grid_goldenratio</span>
+                            </span>
+                            <div>
+                                <span class="text-xs font-semibold text-slate-200 block">Inventory Rack Unit</span>
+                                <span class="text-[10px] text-slate-400 font-mono">Size: 4 x 2 cells</span>
+                            </div>
+                        </div>
+                        <span class="material-icons text-blue-500 text-sm" id="indicator-rack">check_circle</span>
+                    </div>
+
+                    <!-- FSA Block -->
+                    <div id="stencil-fsa" class="stencil-btn flex items-center justify-between p-3 rounded-xl bg-slate-900 border border-slate-800 hover:border-teal-500/50 cursor-pointer" onclick="selectStencil('FSA')">
+                        <div class="flex items-center space-x-3">
+                            <span class="w-8 h-8 rounded-lg bg-teal-500/10 border border-teal-500/20 flex items-center justify-center text-teal-400">
+                                <span class="material-icons text-lg">dashboard</span>
+                            </span>
+                            <div>
+                                <span class="text-xs font-semibold text-slate-200 block">Floor Stacking (FSA)</span>
+                                <span class="text-[10px] text-slate-400 font-mono">Size: 4 x 4 cells</span>
+                            </div>
+                        </div>
+                        <span class="material-icons text-slate-700 text-sm" id="indicator-fsa">radio_button_unchecked</span>
+                    </div>
+
+                    <!-- Custom Obstruction Builder (Replaced Aisle) -->
+                    <div id="stencil-obstruction" class="stencil-btn flex items-center justify-between p-3 rounded-xl bg-slate-900 border border-slate-800 hover:border-orange-500/50 cursor-pointer" onclick="selectStencil('Obstruction')">
+                        <div class="flex items-center space-x-3">
+                            <span class="w-8 h-8 rounded-lg bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-orange-400">
+                                <span class="material-icons text-lg">block</span>
+                            </span>
+                            <div>
+                                <span class="text-xs font-semibold text-slate-200 block">Structural Obstruction</span>
+                                <span class="text-[10px] text-slate-400">Drag/draw custom blocked area</span>
+                            </div>
+                        </div>
+                        <span class="material-icons text-slate-700 text-sm" id="indicator-obstruction">radio_button_unchecked</span>
+                    </div>
+
+                    <!-- Eraser Tool -->
+                    <div id="stencil-erase" class="stencil-btn flex items-center justify-between p-3 rounded-xl bg-slate-900 border border-slate-850 hover:border-rose-500/50 cursor-pointer" onclick="selectStencil('Erase')">
+                        <div class="flex items-center space-x-3">
+                            <span class="w-8 h-8 rounded-lg bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400">
+                                <span class="material-icons text-lg">auto_fix_normal</span>
+                            </span>
+                            <div>
+                                <span class="text-xs font-semibold text-slate-200 block">Remove / Delete Tool</span>
+                                <span class="text-[10px] text-slate-400">Clear stencils under pointer</span>
+                            </div>
+                        </div>
+                        <span class="material-icons text-slate-700 text-sm" id="indicator-erase">radio_button_unchecked</span>
+                    </div>
+                </div>
+
+                <!-- Rotation & Placement Control Actions -->
+                <div class="mt-4 p-3 bg-slate-900/60 border border-slate-900 rounded-xl flex items-center justify-between">
+                    <span class="text-[11px] text-slate-400">Placement Orientation:</span>
+                    <button onclick="rotatePreview()" class="bg-blue-600/10 border border-blue-500/30 text-blue-400 hover:bg-blue-600/20 transition px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5">
+                        <span class="material-icons text-xs">rotate_right</span>
+                        <span id="rotation-val">Rotate (0°)</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Object Inspector (Dynamic Selection Card) -->
+            <div class="border-t border-slate-900 pt-4">
+                <div class="flex items-center space-x-2 mb-3">
+                    <span class="material-icons text-indigo-400 text-sm">settings_input_component</span>
+                    <h2 class="text-xs font-bold text-slate-400 uppercase tracking-wider">2. Selected Module</h2>
+                </div>
+
+                <div class="bg-slate-900 p-4 rounded-xl border border-slate-850" id="inspector-empty">
+                    <p class="text-xs text-slate-500 text-center py-2">Click any placed module on the floor to inspect or modify its specs.</p>
+                </div>
+
+                <div class="bg-slate-900 p-4 rounded-xl border border-blue-500/20 space-y-3 hidden" id="inspector-active">
+                    <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                        <span class="text-xs font-bold text-slate-200 uppercase tracking-wider" id="inspect-type">RACK</span>
+                        <span class="text-[9px] font-mono bg-blue-600/15 text-blue-400 px-1.5 py-0.5 rounded" id="inspect-id">#ID</span>
+                    </div>
+
+                    <div class="space-y-2">
+                        <div>
+                            <label class="block text-[10px] font-semibold text-slate-400 uppercase mb-1">Custom Label ID</label>
+                            <input type="text" id="inspect-label" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500">
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-2">
+                            <div>
+                                <label class="block text-[10px] font-semibold text-slate-400 uppercase mb-1">Grid Position</label>
+                                <span class="block text-xs font-mono text-slate-300 p-1 bg-slate-950 rounded-md border border-slate-800/60" id="inspect-pos">Col 0, Row 0</span>
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-semibold text-slate-400 uppercase mb-1">Active Size</label>
+                                <span class="block text-xs font-mono text-slate-300 p-1 bg-slate-950 rounded-md border border-slate-800/60" id="inspect-size">4 x 2 cells</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Dynamic Action options -->
+                    <div class="grid grid-cols-2 gap-2 pt-2">
+                        <button id="inspect-pivot-btn" onclick="rotateSelectedObject()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold py-2 px-3 rounded-lg transition flex items-center justify-center space-x-1">
+                            <span class="material-icons text-xs">rotate_right</span>
+                            <span>Pivot</span>
+                        </button>
+                        <button onclick="deleteSelectedObject()" class="bg-rose-950/40 hover:bg-rose-900 border border-rose-900/30 text-rose-300 text-xs font-semibold py-2 px-3 rounded-lg transition flex items-center justify-center space-x-1">
+                            <span class="material-icons text-xs">delete</span>
+                            <span>Delete</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer Operations -->
+            <div class="pt-4 border-t border-slate-900 space-y-2.5 mt-auto">
+                <button id="btn-export" class="w-full bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-200 text-xs font-semibold py-2.5 px-4 rounded-xl transition duration-150 flex items-center justify-center space-x-2">
+                    <span class="material-icons text-sm">content_copy</span>
+                    <span>Copy JSON Space Schema</span>
+                </button>
+                <button id="btn-clear-all" class="w-full bg-rose-950/10 hover:bg-rose-950/30 border border-rose-900/20 text-rose-300 text-xs py-2 px-4 rounded-xl transition duration-150 flex items-center justify-center space-x-2">
+                    <span class="material-icons text-sm">delete_sweep</span>
+                    <span>Clear Workspace Floor</span>
+                </button>
+            </div>
+        </section>
+
+        <!-- Center/Right Canvas Workspace -->
+        <section class="flex-1 bg-slate-900 flex flex-col overflow-hidden relative">
+            
+            <!-- Real-Time Capacity HUD -->
+            <div class="grid grid-cols-4 gap-4 p-6 bg-slate-950/40 border-b border-slate-900 shrink-0">
+                <div class="bg-slate-950/70 p-4 rounded-xl border border-slate-850 flex flex-col justify-center">
+                    <span class="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Placed Racks</span>
+                    <span id="hud-racks" class="text-xl font-extrabold text-blue-400 font-mono mt-0.5">0 units</span>
+                </div>
+                <div class="bg-slate-950/70 p-4 rounded-xl border border-slate-850 flex flex-col justify-center">
+                    <span class="text-[10px] uppercase font-bold text-slate-500 tracking-wider">FSA Stacking Area</span>
+                    <span id="hud-fsa" class="text-xl font-extrabold text-teal-400 font-mono mt-0.5">0 blocks</span>
+                </div>
+                <div class="bg-slate-950/70 p-4 rounded-xl border border-slate-850 flex flex-col justify-center">
+                    <span class="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Obstruction Area</span>
+                    <span id="hud-obstructions" class="text-xl font-extrabold text-orange-400 font-mono mt-0.5">0 blocks</span>
+                </div>
+                <div class="bg-slate-950/70 p-4 rounded-xl border border-slate-850 flex flex-col justify-center">
+                    <span class="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Unusable Space %</span>
+                    <span id="hud-coverage" class="text-xl font-extrabold text-indigo-400 font-mono mt-0.5">0%</span>
+                </div>
+            </div>
+
+            <!-- Interactivity Design Canvas Area -->
+            <div id="canvas-container" class="flex-1 overflow-auto flex items-center justify-center p-8 relative">
+                <canvas id="planner-canvas" class="bg-slate-950 rounded-2xl shadow-2xl border border-slate-850 cursor-crosshair transition-all hover:border-blue-500/20"></canvas>
+            </div>
+
+            <!-- Dynamic UI Toast Notification -->
+            <div id="toast" class="absolute bottom-6 right-6 px-4 py-3 bg-emerald-950/90 border border-emerald-500/30 text-emerald-300 rounded-xl text-xs font-semibold shadow-2xl flex items-center space-x-2 transform translate-y-20 opacity-0 transition duration-300 pointer-events-none z-50">
+                <span class="material-icons text-base">check_circle</span>
+                <span id="toast-msg">Configuration successfully updated!</span>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        // Design Token Colors matching Pro UI Visual Palette
+        const STENCIL_THEMES = {
+            Rack: {
+                border: '#3b82f6',
+                fill: 'rgba(59, 130, 246, 0.1)',
+                fillInner: 'rgba(59, 130, 246, 0.25)',
+                text: '#93c5fd'
+            },
+            FSA: {
+                border: '#14b8a6',
+                fill: 'rgba(20, 184, 166, 0.1)',
+                fillInner: 'rgba(20, 184, 166, 0.25)',
+                text: '#99f6e4'
+            },
+            Obstruction: {
+                border: '#f97316', // Orange warning color
+                fill: 'rgba(249, 115, 22, 0.08)',
+                fillInner: 'rgba(249, 115, 22, 0.22)',
+                text: '#ffedd5'
+            },
+            ActiveOverlay: 'rgba(59, 130, 246, 0.2)',
+            GridLines: '#1e293b',
+            HoverOverlay: 'rgba(99, 102, 241, 0.12)'
+        };
+
+        // Core Application State
+        let plannerState = {
+            cols: 24,
+            rows: 16,
+            cellWidth: 32,
+            cellHeight: 32,
+            activeTool: 'Rack', // Tool selected: 'Rack' | 'FSA' | 'Obstruction' | 'Erase'
+            placedObjects: [],  // Array of placed modules: { id, type, x, y, w, h, rotation, label }
+            activeRotation: 0,  // Rotation pre-placement: 0, 90, 180, 270
+            selectedObjectId: null, // Placed object currently inspected
+            isDrawingObstruction: false, // Specifically for Obstruction drag-stretching
+            obstructionStart: null,     // { x, y } coordinates when starting Obstruction drag
+            currentMouseCell: null // { col, row } coordinates of pointer
+        };
+
+        // DOM elements
+        const colsInput = document.getElementById('grid-cols');
+        const rowsInput = document.getElementById('grid-rows');
+        const applyGridBtn = document.getElementById('btn-resize-grid');
+        const canvas = document.getElementById('planner-canvas');
+        const ctx = canvas.getContext('2d');
+        const canvasContainer = document.getElementById('canvas-container');
+
+        // Inspector & UI panels
+        const inspectorEmpty = document.getElementById('inspector-empty');
+        const inspectorActive = document.getElementById('inspector-active');
+        const inspectType = document.getElementById('inspect-type');
+        const inspectId = document.getElementById('inspect-id');
+        const inspectLabel = document.getElementById('inspect-label');
+        const inspectPos = document.getElementById('inspect-pos');
+        const inspectSize = document.getElementById('inspect-size');
+        const inspectPivotBtn = document.getElementById('inspect-pivot-btn');
+
+        // HUD & Toast
+        const hudRacks = document.getElementById('hud-racks');
+        const hudFsa = document.getElementById('hud-fsa');
+        const hudObstructions = document.getElementById('hud-obstructions');
+        const hudCoverage = document.getElementById('hud-coverage');
+        const toast = document.getElementById('toast');
+        const toastMsg = document.getElementById('toast-msg');
+
+        // Re-scale canvas correctly for high-DPI viewports
+        function resizeCanvasToGrid() {
+            const canvasW = plannerState.cols * plannerState.cellWidth;
+            const canvasH = plannerState.rows * plannerState.cellHeight;
+
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = canvasW * dpr;
+            canvas.height = canvasH * dpr;
+            canvas.style.width = `${canvasW}px`;
+            canvas.style.height = `${canvasH}px`;
+            ctx.scale(dpr, dpr);
+            drawWorkspace();
+        }
+
+        // Apply grid dimension adjustments cleanly
+        applyGridBtn.addEventListener('click', () => {
+            const desiredCols = Math.max(10, Math.min(60, parseInt(colsInput.value) || 24));
+            const desiredRows = Math.max(8, Math.min(40, parseInt(rowsInput.value) || 16));
+            
+            colsInput.value = desiredCols;
+            rowsInput.value = desiredRows;
+
+            plannerState.cols = desiredCols;
+            plannerState.rows = desiredRows;
+            
+            // Clean out invalid objects clipping outside new floor layout
+            plannerState.placedObjects = plannerState.placedObjects.filter(obj => {
+                const maxColUsed = obj.x + (obj.rotation === 90 || obj.rotation === 270 ? obj.h : obj.w);
+                const maxRowUsed = obj.y + (obj.rotation === 90 || obj.rotation === 270 ? obj.w : obj.h);
+                return maxColUsed <= plannerState.cols && maxRowUsed <= plannerState.rows;
+            });
+
+            resizeCanvasToGrid();
+            updateHUDMetrics();
+            showToast("Grid dimensions dynamically adjusted!");
+        });
+
+        // Toggle placement tool modes
+        function selectStencil(tool) {
+            plannerState.activeTool = tool;
+            
+            // Sync highlight states in HTML
+            const toolsList = ['Rack', 'FSA', 'Obstruction', 'Erase'];
+            toolsList.forEach(t => {
+                const button = document.getElementById(`stencil-${t.toLowerCase()}`);
+                const indicator = document.getElementById(`indicator-${t.toLowerCase()}`);
+                if (t === tool) {
+                    button.classList.add('border-blue-500/50', 'active-stencil', 'bg-blue-600/10');
+                    button.classList.remove('border-slate-800');
+                    indicator.innerText = 'check_circle';
+                    indicator.classList.remove('text-slate-700');
+                    indicator.classList.add('text-blue-500');
+                } else {
+                    button.classList.remove('border-blue-500/50', 'active-stencil', 'bg-blue-600/10');
+                    button.classList.add('border-slate-800');
+                    indicator.innerText = 'radio_button_unchecked';
+                    indicator.classList.remove('text-blue-500');
+                    indicator.classList.add('text-slate-700');
+                }
+            });
+
+            plannerState.isDrawingObstruction = false;
+            plannerState.obstructionStart = null;
+            drawWorkspace();
+        }
+
+        // Change target asset stencil rotation orientation prior to stamping
+        function rotatePreview() {
+            plannerState.activeRotation = (plannerState.activeRotation + 90) % 360;
+            document.getElementById('rotation-val').innerText = `Rotate (${plannerState.activeRotation}°)`;
+            drawWorkspace();
+        }
+
+        // Determine width & height on grid considering rotation pivot values
+        function getObjectBounds(x, y, w, h, rotation) {
+            const rotatedWidth = (rotation === 90 || rotation === 270) ? h : w;
+            const rotatedHeight = (rotation === 90 || rotation === 270) ? w : h;
+            return {
+                x1: x,
+                y1: y,
+                x2: x + rotatedWidth,
+                y2: y + rotatedHeight
+            };
+        }
+
+        // Check overlapping layout collision configurations
+        function hasCollision(newObj, skipId = null) {
+            const b1 = getObjectBounds(newObj.x, newObj.y, newObj.w, newObj.h, newObj.rotation);
+            
+            // Check out of grid boundaries
+            if (b1.x1 < 0 || b1.x2 > plannerState.cols || b1.y1 < 0 || b1.y2 > plannerState.rows) {
+                return true;
+            }
+
+            for (let obj of plannerState.placedObjects) {
+                if (obj.id === skipId) continue;
+                const b2 = getObjectBounds(obj.x, obj.y, obj.w, obj.h, obj.rotation);
+                const overlapX = b1.x1 < b2.x2 && b1.x2 > b2.x1;
+                const overlapY = b1.y1 < b2.y2 && b1.y2 > b2.y1;
+                if (overlapX && overlapY) return true;
+            }
+            return false;
+        }
+
+        // Find which object (if any) sits under specified grid coordinates
+        function getObjectAt(col, row) {
+            return plannerState.placedObjects.find(obj => {
+                const b = getObjectBounds(obj.x, obj.y, obj.w, obj.h, obj.rotation);
+                return col >= b.x1 && col < b.x2 && row >= b.y1 && row < b.y2;
+            });
+        }
+
+        // Core Canvas rendering routine
+        function drawWorkspace() {
+            const totalW = plannerState.cols * plannerState.cellWidth;
+            const totalH = plannerState.rows * plannerState.cellHeight;
+
+            // Clear framework
+            ctx.fillStyle = '#090d16';
+            ctx.fillRect(0, 0, totalW, totalH);
+
+            // 1. Draw grid backdrop cells
+            ctx.strokeStyle = STENCIL_THEMES.GridLines;
+            ctx.lineWidth = 1;
+
+            for (let c = 0; c <= plannerState.cols; c++) {
+                ctx.beginPath();
+                ctx.moveTo(c * plannerState.cellWidth, 0);
+                ctx.lineTo(c * plannerState.cellWidth, totalH);
+                ctx.stroke();
+            }
+            for (let r = 0; r <= plannerState.rows; r++) {
+                ctx.beginPath();
+                ctx.moveTo(0, r * plannerState.cellHeight);
+                ctx.lineTo(totalW, r * plannerState.cellHeight);
+                ctx.stroke();
+            }
+
+            // 2. Draw placed modules beautifully with vector details
+            plannerState.placedObjects.forEach(obj => {
+                const bounds = getObjectBounds(obj.x, obj.y, obj.w, obj.h, obj.rotation);
+                const xPx = bounds.x1 * plannerState.cellWidth;
+                const yPx = bounds.y1 * plannerState.cellHeight;
+                const wPx = (bounds.x2 - bounds.x1) * plannerState.cellWidth;
+                const hPx = (bounds.y2 - bounds.y1) * plannerState.cellHeight;
+
+                const isSelected = obj.id === plannerState.selectedObjectId;
+                const theme = STENCIL_THEMES[obj.type];
+
+                // Render vector object fill
+                ctx.fillStyle = theme.fill;
+                ctx.fillRect(xPx, yPx, wPx, hPx);
+
+                // Distinct vector styles per module class
+                if (obj.type === 'Rack') {
+                    // Draw rack frame structures
+                    ctx.strokeStyle = theme.border;
+                    ctx.lineWidth = isSelected ? 3 : 2;
+                    ctx.strokeRect(xPx + 2, yPx + 2, wPx - 4, hPx - 4);
+
+                    // Draw inner shelves/bays visually
+                    ctx.fillStyle = theme.fillInner;
+                    if (obj.rotation === 90 || obj.rotation === 270) {
+                        // Vertical orientation bays
+                        const step = hPx / obj.h;
+                        for (let i = 0; i < obj.h; i++) {
+                            ctx.fillRect(xPx + 4, yPx + (i * step) + 4, wPx - 8, step - 8);
+                            ctx.strokeStyle = 'rgba(59, 130, 246, 0.4)';
+                            ctx.strokeRect(xPx + 4, yPx + (i * step) + 4, wPx - 8, step - 8);
+                        }
+                    } else {
+                        // Horizontal orientation bays
+                        const step = wPx / obj.w;
+                        for (let i = 0; i < obj.w; i++) {
+                            ctx.fillRect(xPx + (i * step) + 4, yPx + 4, step - 8, hPx - 8);
+                            ctx.strokeStyle = 'rgba(59, 130, 246, 0.4)';
+                            ctx.strokeRect(xPx + (i * step) + 4, yPx + 4, step - 8, hPx - 8);
+                        }
+                    }
+                } else if (obj.type === 'FSA') {
+                    // Floor Stacking patterns
+                    ctx.strokeStyle = theme.border;
+                    ctx.lineWidth = isSelected ? 3 : 2;
+                    ctx.strokeRect(xPx + 2, yPx + 2, wPx - 4, hPx - 4);
+
+                    // Diagonal cross-hatching inside FSA block
+                    ctx.strokeStyle = 'rgba(20, 184, 166, 0.18)';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    for (let i = 0; i < wPx + hPx; i += 12) {
+                        ctx.moveTo(xPx + i, yPx);
+                        ctx.lineTo(xPx + i - hPx, yPx + hPx);
+                    }
+                    ctx.stroke();
+                } else if (obj.type === 'Obstruction') {
+                    // Solid warning border for structural column/unusable space
+                    ctx.strokeStyle = theme.border;
+                    ctx.lineWidth = isSelected ? 3 : 2;
+                    ctx.strokeRect(xPx + 2, yPx + 2, wPx - 4, hPx - 4);
+
+                    // Render highly visible diagonal orange hazard warning lines
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.rect(xPx + 3, yPx + 3, wPx - 6, hPx - 6);
+                    ctx.clip();
+                    
+                    ctx.strokeStyle = theme.fillInner;
+                    ctx.lineWidth = 3;
+                    const diagonalSpacing = 12;
+                    for (let i = -hPx; i < wPx + hPx; i += diagonalSpacing) {
+                        ctx.moveTo(xPx + i, yPx);
+                        ctx.lineTo(xPx + i + hPx, yPx + hPx);
+                    }
+                    ctx.stroke();
+                    ctx.restore();
+                }
+
+                // Render block label centered inside modules
+                ctx.fillStyle = theme.text;
+                ctx.font = 'bold 9px "Plus Jakarta Sans", sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                const labelText = obj.label || `${obj.type.toUpperCase()}-${obj.id.slice(-4)}`;
+                ctx.fillText(labelText, xPx + wPx / 2, yPx + hPx / 2);
+            });
+
+            // 3. Render real-time stencil placement/stretch preview
+            if (plannerState.currentMouseCell) {
+                const mouseCol = plannerState.currentMouseCell.col;
+                const mouseRow = plannerState.currentMouseCell.row;
+
+                if (plannerState.activeTool === 'Obstruction' && plannerState.isDrawingObstruction && plannerState.obstructionStart) {
+                    // Draw Custom-dimension obstruction stretch feedback rectangle
+                    const startC = plannerState.obstructionStart.col;
+                    const startR = plannerState.obstructionStart.row;
+                    
+                    const minC = Math.min(startC, mouseCol);
+                    const maxC = Math.max(startC, mouseCol);
+                    const minR = Math.min(startR, mouseRow);
+                    const maxR = Math.max(startR, mouseRow);
+
+                    const xPx = minC * plannerState.cellWidth;
+                    const yPx = minR * plannerState.cellHeight;
+                    const wPx = (maxC - minC + 1) * plannerState.cellWidth;
+                    const hPx = (maxR - minR + 1) * plannerState.cellHeight;
+
+                    ctx.fillStyle = 'rgba(249, 115, 22, 0.2)';
+                    ctx.fillRect(xPx, yPx, wPx, hPx);
+                    ctx.strokeStyle = '#f97316';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(xPx, yPx, wPx, hPx);
+
+                    // Label dimension footprint
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = '10px "JetBrains Mono", monospace';
+                    ctx.fillText(`${maxC - minC + 1} x ${maxR - minR + 1} cells`, xPx + wPx / 2, yPx + hPx / 2);
+
+                } else if (plannerState.activeTool === 'Rack' || plannerState.activeTool === 'FSA') {
+                    // Predefined modules stamp preview dimensions
+                    const tempW = plannerState.activeTool === 'Rack' ? 4 : 4;
+                    const tempH = plannerState.activeTool === 'Rack' ? 2 : 4;
+                    
+                    const bounds = getObjectBounds(mouseCol, mouseRow, tempW, tempH, plannerState.activeRotation);
+                    const xPx = bounds.x1 * plannerState.cellWidth;
+                    const yPx = bounds.y1 * plannerState.cellHeight;
+                    const wPx = (bounds.x2 - bounds.x1) * plannerState.cellWidth;
+                    const hPx = (bounds.y2 - bounds.y1) * plannerState.cellHeight;
+
+                    // Compute preview colors based on intersection layout status
+                    const isBlocked = hasCollision({ x: mouseCol, y: mouseRow, w: tempW, h: tempH, rotation: plannerState.activeRotation });
+                    
+                    ctx.fillStyle = isBlocked ? 'rgba(239, 68, 68, 0.25)' : 'rgba(59, 130, 246, 0.2)';
+                    ctx.fillRect(xPx, yPx, wPx, hPx);
+                    ctx.strokeStyle = isBlocked ? '#ef4444' : '#3b82f6';
+                    ctx.lineWidth = 1.5;
+                    ctx.strokeRect(xPx, yPx, wPx, hPx);
+
+                } else if (plannerState.activeTool === 'Erase') {
+                    // Clear cell visual pointer highlighting
+                    const xPx = mouseCol * plannerState.cellWidth;
+                    const yPx = mouseRow * plannerState.cellHeight;
+                    ctx.strokeStyle = '#ef4444';
+                    ctx.lineWidth = 1.5;
+                    ctx.strokeRect(xPx, yPx, plannerState.cellWidth, plannerState.cellHeight);
+                }
+            }
+        }
+
+        // Retrieve grid cell coords relative to client view positioning
+        function getCellCoords(clientX, clientY) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = rect.width / (plannerState.cols * plannerState.cellWidth);
+            const scaleY = rect.height / (plannerState.rows * plannerState.cellHeight);
+            
+            const localX = (clientX - rect.left) / scaleX;
+            const localY = (clientY - rect.top) / scaleY;
+
+            const col = Math.floor(localX / plannerState.cellWidth);
+            const row = Math.floor(localY / plannerState.cellHeight);
+
+            if (col >= 0 && col < plannerState.cols && row >= 0 && row < plannerState.rows) {
+                return { col, row };
+            }
+            return null;
+        }
+
+        // Pointer hover coordinates update hook
+        canvas.addEventListener('mousemove', (e) => {
+            const coords = getCellCoords(e.clientX, e.clientY);
+            plannerState.currentMouseCell = coords;
+            drawWorkspace();
+        });
+
+        // Pointer exiting visual boundaries reset
+        canvas.addEventListener('mouseleave', () => {
+            plannerState.currentMouseCell = null;
+            plannerState.isDrawingObstruction = false;
+            drawWorkspace();
+        });
+
+        // Click placement interaction handler
+        canvas.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return; // Only process left button stamps
+            const cell = getCellCoords(e.clientX, e.clientY);
+            if (!cell) return;
+
+            if (plannerState.activeTool === 'Obstruction') {
+                // Initialize Custom Dimension Obstruction Drag
+                plannerState.isDrawingObstruction = true;
+                plannerState.obstructionStart = cell;
+            } else if (plannerState.activeTool === 'Erase') {
+                // Delete module clicked
+                const targeted = getObjectAt(cell.col, cell.row);
+                if (targeted) {
+                    plannerState.placedObjects = plannerState.placedObjects.filter(obj => obj.id !== targeted.id);
+                    if (plannerState.selectedObjectId === targeted.id) {
+                        plannerState.selectedObjectId = null;
+                        updateInspector();
+                    }
+                    updateHUDMetrics();
+                    drawWorkspace();
+                    showToast("Module removed successfully");
+                }
+            } else {
+                // Placing Rack or FSA based on pre-defined dimensions
+                const isRack = plannerState.activeTool === 'Rack';
+                const w = isRack ? 4 : 4;
+                const h = isRack ? 2 : 4;
+
+                const newModule = {
+                    id: 'mod_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5),
+                    type: plannerState.activeTool,
+                    x: cell.col,
+                    y: cell.row,
+                    w: w,
+                    h: h,
+                    rotation: plannerState.activeRotation,
+                    label: ""
+                };
+
+                // Check and enforce bounding/intersect collision bounds before placement
+                if (!hasCollision(newModule)) {
+                    plannerState.placedObjects.push(newModule);
+                    plannerState.selectedObjectId = newModule.id;
+                    updateInspector();
+                    updateHUDMetrics();
+                    drawWorkspace();
+                    showToast(`Placed new ${newModule.type} block`);
+                } else {
+                    showToast("Conflict! Spot occupied or blocked.");
+                }
+            }
+        });
+
+        // finalize dragging shapes
+        window.addEventListener('mouseup', (e) => {
+            if (plannerState.activeTool === 'Obstruction' && plannerState.isDrawingObstruction && plannerState.obstructionStart && plannerState.currentMouseCell) {
+                const start = plannerState.obstructionStart;
+                const end = plannerState.currentMouseCell;
+
+                const minC = Math.min(start.col, end.col);
+                const maxC = Math.max(start.col, end.col);
+                const minR = Math.min(start.row, end.row);
+                const maxR = Math.max(start.row, end.row);
+
+                const width = maxC - minC + 1;
+                const height = maxR - minR + 1;
+
+                const newObstruction = {
+                    id: 'mod_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5),
+                    type: 'Obstruction',
+                    x: minC,
+                    y: minR,
+                    w: width,
+                    h: height,
+                    rotation: 0,
+                    label: ""
+                };
+
+                // Stamp Custom Obstruction if space is clear
+                if (!hasCollision(newObstruction)) {
+                    plannerState.placedObjects.push(newObstruction);
+                    plannerState.selectedObjectId = newObstruction.id;
+                    updateInspector();
+                    updateHUDMetrics();
+                    showToast("Structural Obstruction stamped!");
+                } else {
+                    showToast("Cannot place! Overlaps with an existing asset.");
+                }
+
+                plannerState.isDrawingObstruction = false;
+                plannerState.obstructionStart = null;
+                drawWorkspace();
+            }
+        });
+
+        // Single click selector for existing modules
+        canvas.addEventListener('click', (e) => {
+            if (plannerState.isDrawingObstruction) return;
+            const cell = getCellCoords(e.clientX, e.clientY);
+            if (!cell) return;
+
+            const clickedObj = getObjectAt(cell.col, cell.row);
+            if (clickedObj && plannerState.activeTool !== 'Erase') {
+                plannerState.selectedObjectId = clickedObj.id;
+                updateInspector();
+                drawWorkspace();
+            }
+        });
+
+        // Update active Inspector specs
+        function updateInspector() {
+            if (!plannerState.selectedObjectId) {
+                inspectorEmpty.classList.remove('hidden');
+                inspectorActive.classList.add('hidden');
+                return;
+            }
+
+            const activeObj = plannerState.placedObjects.find(o => o.id === plannerState.selectedObjectId);
+            if (!activeObj) {
+                plannerState.selectedObjectId = null;
+                updateInspector();
+                return;
+            }
+
+            inspectorEmpty.classList.add('hidden');
+            inspectorActive.classList.remove('hidden');
+
+            inspectType.innerText = activeObj.type === 'Obstruction' ? 'OBSTRUCTION' : activeObj.type.toUpperCase();
+            inspectId.innerText = `#${activeObj.id.slice(-4).toUpperCase()}`;
+            inspectLabel.value = activeObj.label || "";
+            inspectPos.innerText = `Col ${activeObj.x}, Row ${activeObj.y}`;
+            inspectSize.innerText = `${activeObj.w} x ${activeObj.h} cells`;
+
+            // Obstruction objects shouldn't pivot because they are drawn explicitly
+            if (activeObj.type === 'Obstruction') {
+                inspectPivotBtn.classList.add('opacity-40', 'pointer-events-none');
+            } else {
+                inspectPivotBtn.classList.remove('opacity-40', 'pointer-events-none');
+            }
+
+            // On Label Key Input, directly mutate inside state
+            inspectLabel.oninput = (e) => {
+                activeObj.label = e.target.value;
+                drawWorkspace();
+            };
+        }
+
+        // Pivot/Rotate an existing module already stamped down on the layout floor
+        function rotateSelectedObject() {
+            if (!plannerState.selectedObjectId) return;
+            const activeObj = plannerState.placedObjects.find(o => o.id === plannerState.selectedObjectId);
+            if (!activeObj) return;
+            if (activeObj.type === 'Obstruction') return; // Do not rotate stretched obstructions
+
+            // Simple pivot bounds recalculation check to ensure rotation doesn't clip
+            const prevRot = activeObj.rotation;
+            activeObj.rotation = (activeObj.rotation + 90) % 360;
+
+            if (hasCollision(activeObj, activeObj.id)) {
+                // Revert rotation if block hits conflict
+                activeObj.rotation = prevRot;
+                showToast("Cannot rotate! Conflicting with nearby space.");
+            } else {
+                updateInspector();
+                drawWorkspace();
+                showToast("Module rotated seamlessly");
+            }
+        }
+
+        // Delete active module
+        function deleteSelectedObject() {
+            if (!plannerState.selectedObjectId) return;
+            plannerState.placedObjects = plannerState.placedObjects.filter(o => o.id !== plannerState.selectedObjectId);
+            plannerState.selectedObjectId = null;
+            updateInspector();
+            updateHUDMetrics();
+            drawWorkspace();
+            showToast("Module removed");
+        }
+
+        // Dynamic metrics update calculator
+        function updateHUDMetrics() {
+            let racksCount = 0;
+            let fsaCount = 0;
+            let obstructionsCount = 0;
+            let coveredCells = 0;
+            let totalObstructionCells = 0;
+
+            plannerState.placedObjects.forEach(obj => {
+                const bounds = getObjectBounds(obj.x, obj.y, obj.w, obj.h, obj.rotation);
+                const cellsTotal = (bounds.x2 - bounds.x1) * (bounds.y2 - bounds.y1);
+                coveredCells += cellsTotal;
+
+                if (obj.type === 'Rack') racksCount++;
+                if (obj.type === 'FSA') fsaCount++;
+                if (obj.type === 'Obstruction') {
+                    obstructionsCount++;
+                    totalObstructionCells += cellsTotal;
+                }
+            });
+
+            const gridTotal = plannerState.cols * plannerState.rows;
+            // Unusable space ratio represents portion blocked by structural columns
+            const obstructionRatio = gridTotal > 0 ? Math.round((totalObstructionCells / gridTotal) * 100) : 0;
+
+            hudRacks.innerText = `${racksCount} unit${racksCount === 1 ? '' : 's'}`;
+            hudFsa.innerText = `${fsaCount} block${fsaCount === 1 ? '' : 's'}`;
+            hudObstructions.innerText = `${obstructionsCount} zone${obstructionsCount === 1 ? '' : 's'}`;
+            hudCoverage.innerText = `${obstructionRatio}%`;
+        }
+
+        // UTILITY: Safe Copy helper for clipboard sandbox bypass
+        function copyTextToClipboard(text) {
+            return new Promise((resolve, reject) => {
+                if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+                    navigator.clipboard.writeText(text).then(resolve).catch(err => {
+                        fallbackCopy(text) ? resolve() : reject(err);
+                    });
+                } else {
+                    fallbackCopy(text) ? resolve() : reject(new Error("Clipboard blocked."));
+                }
+            });
+        }
+
+        function fallbackCopy(text) {
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.style.position = "fixed";
+            textArea.style.opacity = "0";
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            try {
+                const ok = document.execCommand('copy');
+                document.body.removeChild(textArea);
+                return ok;
+            } catch (err) {
+                document.body.removeChild(textArea);
+                return false;
+            }
+        }
+
+        document.getElementById('btn-export').addEventListener('click', () => {
+            const finalLayoutSchema = {
+                editorType: "Modular Object & Obstruction Placement Designer",
+                timestamp: new Date().toISOString(),
+                floorDimension: {
+                    cols: plannerState.cols,
+                    rows: plannerState.rows,
+                    cellW: plannerState.cellWidth,
+                    cellH: plannerState.cellHeight,
+                    totalSquareCells: plannerState.cols * plannerState.rows
+                },
+                stampedModules: plannerState.placedObjects.map(obj => {
+                    const bounds = getObjectBounds(obj.x, obj.y, obj.w, obj.h, obj.rotation);
+                    return {
+                        id: obj.id,
+                        type: obj.type,
+                        gridPos: { startCol: obj.x, startRow: obj.y, endCol: bounds.x2, endRow: bounds.y2 },
+                        dimensions: { w: obj.w, h: obj.h },
+                        rotationAngle: obj.rotation,
+                        customLabel: obj.label || `Zone-${obj.type.substring(0,3).toUpperCase()}-${obj.id.slice(-4).toUpperCase()}`
+                    };
+                })
+            };
+
+            const serializedText = JSON.stringify(finalLayoutSchema, null, 4);
+
+            copyTextToClipboard(serializedText)
+                .then(() => showToast("Export JSON copied to your Clipboard!"))
+                .catch(() => {
+                    console.log(serializedText);
+                    showToast("Copy restricted! JSON printed to console.");
+                });
+        });
+
+        // Clear layout workspace floor button
+        document.getElementById('btn-clear-all').addEventListener('click', () => {
+            plannerState.placedObjects = [];
+            plannerState.selectedObjectId = null;
+            updateInspector();
+            updateHUDMetrics();
+            drawWorkspace();
+            showToast("Workspace floor fully cleared!");
+        });
+
+        // Trigger notifications inside system overlays
+        function showToast(msg) {
+            toastMsg.innerText = msg;
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            toast.classList.add('translate-y-0', 'opacity-100');
+
+            setTimeout(() => {
+                toast.classList.add('translate-y-20', 'opacity-0');
+                toast.classList.remove('translate-y-0', 'opacity-100');
+            }, 3000);
+        }
+
+        // Window loading hook
+        window.onload = function () {
+            resizeCanvasToGrid();
+            // Load some default modules to start off visually, now including Obstructions (Pillars)
+            plannerState.placedObjects = [
+                { id: "mod_init_1", type: "Rack", x: 2, y: 2, w: 4, h: 2, rotation: 0, label: "RACK-A01" },
+                { id: "mod_init_2", type: "Rack", x: 8, y: 2, w: 4, h: 2, rotation: 0, label: "RACK-A02" },
+                { id: "mod_init_3", type: "FSA", x: 14, y: 2, w: 4, h: 4, rotation: 0, label: "FSA-B01" },
+                { id: "mod_init_4", type: "Obstruction", x: 20, y: 2, w: 2, h: 4, rotation: 0, label: "COLUMN 01" },
+                { id: "mod_init_5", type: "Rack", x: 2, y: 12, w: 4, h: 2, rotation: 90, label: "RACK-C01" },
+                { id: "mod_init_6", type: "Rack", x: 8, y: 12, w: 4, h: 2, rotation: 90, label: "RACK-C02" },
+                { id: "mod_init_7", type: "Obstruction", x: 14, y: 10, w: 2, h: 2, rotation: 0, label: "PILLAR 02" }
+            ];
+            updateHUDMetrics();
+            drawWorkspace();
+        }
+
+        // Responsive handling on window resizing
+        window.addEventListener('resize', () => {
+            resizeCanvasToGrid();
+        });
+
+        // Add keyboard hotkey helper: 'R' to Rotate modular stencil previews dynamically
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'r' || e.key === 'R') {
+                if (document.activeElement.tagName !== 'INPUT') {
+                    rotatePreview();
+                }
+            }
+        });
+    </script>
+</body>
+</html>

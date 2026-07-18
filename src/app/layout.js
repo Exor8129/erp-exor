@@ -18,9 +18,11 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
+    /* 1. Added h-full and bg-blue-600 to lock the root height and color */
+    <html lang="en" className="h-full bg-blue-600">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        /* 2. Added h-full, m-0, p-0, and overflow-hidden to lock the body */
+        className={`${geistSans.variable} ${geistMono.variable} h-full m-0 p-0 overflow-hidden antialiased`}
       >
         {children}
       </body>
