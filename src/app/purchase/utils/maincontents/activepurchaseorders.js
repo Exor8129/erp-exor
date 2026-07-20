@@ -87,8 +87,8 @@ const TableRow = ({
           }}
           onClick={onCreateCPO}
         >
-          <div className="w-7 h-7 border border-current rounded-full flex items-center justify-center text-[8px] font-bold">
-             -G R N- 
+          <div className="w-10 h-8 border border-current rounded-full flex items-center justify-center text-[8px] font-bold">
+            G R N
           </div>
         </button>
         {/* VIEW */}

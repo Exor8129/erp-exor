@@ -228,6 +228,10 @@ const loadPO = async () => {
   useEffect(() => {
     setMounted(true);
 
+    if (typeof window !== "undefined") {
+    document.body.style.overflow = "unset";
+  }
+
     fetchSuppliers();
     fetchProducts();
     fetchShippingAddresses();

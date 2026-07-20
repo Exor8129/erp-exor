@@ -50,9 +50,9 @@ const menuGroups = [
   {
     group: "Warehouse",
     items: [
-      { title: "Create Warehouse", icon: PackagePlus },
+      { title: "Warehouse", icon: PackagePlus },
       { title: "Sectors & Layout", icon: Network },
-      { title: "Temp", icon: Sliders },
+      { title: "Create Warehouse", icon: Sliders },
 
       
     ],

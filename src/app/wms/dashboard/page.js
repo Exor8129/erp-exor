@@ -7,11 +7,12 @@ import Header from "./components/Header";
 // 1. Import your Overview component from the pages directory
 import Overview from "./pages/Overview";
 import CreateWarehouse from "./pages/create-warehouse";
-import Temp from "./pages/temp"
+import Warehouse from "./pages/Warehouse";
 import "../../globals.css";
 
 export default function WmsDashboardPage() {
   const [activeTab, setActiveTab] = useState("Overview");
+  
 
   // 2. Helper function or object to dynamically switch content based on the active tab
   const renderTabContent = () => {
@@ -22,8 +23,8 @@ export default function WmsDashboardPage() {
       case "Create Warehouse":
         return <CreateWarehouse />;
 
-      case "Temp":
-        return <Temp/>; // Placeholder for future content
+      case "Warehouse":
+        return <Warehouse />;
 
       // You can add more tabs easily like this later:
       // case "Analytics":
@@ -73,16 +74,13 @@ export default function WmsDashboardPage() {
           {/* THE ELEVATED MAIN CANVAS CARD WITH ROUNDED CORNERS */}
           <div
             style={{ borderRadius: "32px" }}
-            className="
+ className="
     w-full 
     h-full 
     bg-white 
     shadow-[0_20px_50px_-12px_rgba(0,0,0,0.06)]
-    p-6 
-    xl:p-8 
-    overflow-y-hidden
-    overflow-x-auto
-  "
+    overflow-hidden
+ "
           >
             {renderTabContent()}
           </div>
