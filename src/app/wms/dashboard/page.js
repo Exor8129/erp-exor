@@ -8,11 +8,12 @@ import Header from "./components/Header";
 import Overview from "./pages/Overview";
 import CreateWarehouse from "./pages/create-warehouse";
 import Warehouse from "./pages/Warehouse";
+import GRNList from "./pages/GRNList"; // Import the GRNList component
 import "../../globals.css";
+import InventoryStockDashboard from "./pages/stocks";
 
 export default function WmsDashboardPage() {
   const [activeTab, setActiveTab] = useState("Overview");
-  
 
   // 2. Helper function or object to dynamically switch content based on the active tab
   const renderTabContent = () => {
@@ -25,6 +26,12 @@ export default function WmsDashboardPage() {
 
       case "Warehouse":
         return <Warehouse />;
+
+        case "Goods Receipt Note":
+        return <GRNList />;
+
+        case "Stocks":
+        return <InventoryStockDashboard />;
 
       // You can add more tabs easily like this later:
       // case "Analytics":
@@ -70,17 +77,11 @@ export default function WmsDashboardPage() {
         </div>
 
         {/* Scrollable Viewport Container */}
-        <div className="flex-1 h-full min-h-0 px-8 pb-8 pt-1">
+        <div className="flex-1 min-h-0 px-8 pb-8 pt-1 flex">
           {/* THE ELEVATED MAIN CANVAS CARD WITH ROUNDED CORNERS */}
           <div
             style={{ borderRadius: "32px" }}
- className="
-    w-full 
-    h-full 
-    bg-white 
-    shadow-[0_20px_50px_-12px_rgba(0,0,0,0.06)]
-    overflow-hidden
- "
+            className="w-full h-full flex flex-col bg-white shadow-[0_20px_50px_-12px_rgba(0,0,0,0.06)] overflow-hidden "
           >
             {renderTabContent()}
           </div>

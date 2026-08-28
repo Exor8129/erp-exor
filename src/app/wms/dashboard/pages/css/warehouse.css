@@ -1,0 +1,142 @@
+/* ===========================
+   PAGE LAYOUT
+=========================== */
+.warehouse-page-container {
+    min-height: 100vh;
+    background-color: #f3f4f6;
+    padding: 24px;
+    box-sizing: border-box;
+}
+
+.warehouse-title {
+    font-size: 1.5rem;
+    font-weight: bold;
+    margin-bottom: 24px;
+}
+
+/* ===========================
+   MAIN CONTENT
+=========================== */
+.warehouse-content-wrapper {
+    display: grid;
+    /* ✅ Gives the left section ~71% and right section ~29% dynamically without breaking layout bounds */
+    grid-template-columns: 2.5fr 1fr; 
+    gap: 20px;
+    height: calc(100vh - 140px);
+}
+
+/* ===========================
+   MAP SECTION
+=========================== */
+.map-section {
+    width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+/* ===========================
+   DETAILS PANEL
+=========================== */
+.details-section {
+    width: 100%;
+    min-width: 320px;
+    background-color: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    padding: 20px;
+    box-sizing: border-box;
+    overflow-y: auto;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.details-header {
+    font-size: 1.125rem;
+    font-weight: 600;
+    border-bottom: 1px solid #e5e7eb;
+    padding-bottom: 12px;
+    margin-bottom: 16px;
+}
+
+.details-content {
+    flex: 1;
+}
+
+/* ===========================
+   PLACEHOLDER
+=========================== */
+.placeholder-box {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    height: 100%;
+    min-height: 250px;
+    color: #6b7280;
+    border: 2px dashed #e2e8f0;
+    border-radius: 12px;
+    background-color: #f8fafc;
+    padding: 24px;
+    box-sizing: border-box;
+}
+
+.placeholder-icon {
+    font-size: 3rem;
+    margin-bottom: 16px;
+}
+
+/* =====================================================
+   RESPONSIVE MEDIA QUERIES
+===================================================== */
+
+/* LAPTOP & SMALL SCREENS (1200px and down) */
+@media (max-width: 1200px) {
+    .warehouse-page-container {
+        padding: 16px;
+    }
+    .warehouse-content-wrapper {
+        gap: 16px;
+        grid-template-columns: 2fr 1fr; /* Adjust ratios slightly for narrower views */
+    }
+}
+
+/* TABLET (992px and down) - Stack layouts vertically */
+@media (max-width: 992px) {
+    .warehouse-content-wrapper {
+        grid-template-columns: 1fr; /* Change grid layout to a single column */
+        height: auto;
+    }
+
+    .map-section {
+        width: 100%;
+        min-height: 500px;
+    }
+
+    .details-section {
+        width: 100%;
+        min-height: 350px;
+    }
+}
+
+/* MOBILE (768px and down) */
+@media (max-width: 768px) {
+    .warehouse-page-container {
+        padding: 12px;
+    }
+
+    .warehouse-title {
+        font-size: 20px;
+        margin-bottom: 16px;
+    }
+
+    .map-section {
+        min-height: 400px;
+    }
+
+    .details-section {
+        padding: 16px;
+        min-height: 300px;
+    }
+}

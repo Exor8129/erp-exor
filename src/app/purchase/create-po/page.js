@@ -337,54 +337,144 @@ const loadPO = async () => {
   };
 
   // ProductSelection Data Fetcher
-  const fetchProducts = async () => {
-    setLoadingProducts(true);
-    const { data, error } = await supabase
+//   const fetchProducts = async () => {
+//     setLoadingProducts(true);
+//     const { data, error } = await supabase
+//       .from("item_master")
+//       .select(
+//         `
+//     id,
+//     item_name,
+//     guid,
+//     alter_id,
+//     uom,
+//     hsn,
+//     tax,
+
+//     item_unit_conversions(
+//         from_unit,
+//         to_unit,
+//         factor
+//     )
+// `,
+//       )
+//       .eq("status", true)
+//       .order("item_name", { ascending: true });
+
+//     if (error) {
+//       console.error("Product fetch error:", error);
+//       setLoadingProducts(false);
+//       return;
+//     }
+
+//     const formatted = (data || []).map((item) => ({
+//       id: item.id,
+//       name: item.item_name || "",
+//       code: String(item.id),
+
+//       // Base stock unit
+//       unit: item.uom || "Nos",
+
+//       // All available conversions
+//       conversions: item.item_unit_conversions || [],
+
+//       hsn: item.hsn || "",
+//       tax: item.tax || "",
+//     }));
+
+//     setProductOptions(formatted);
+//     setLoadingProducts(false);
+//   };
+
+
+const fetchProducts = async () => {
+  setLoadingProducts(true);
+
+  try {
+    let allProducts = [];
+    let page = 0;
+    const pageSize = 1000;
+    let keepFetching = true;
+
+    // 1. Get exact total count first to verify database numbers
+    const { count: totalCount, error: countError } = await supabase
       .from("item_master")
-      .select(
+      .select("id", { count: "exact", head: true })
+      .eq("status", true);
+
+    if (countError) console.error("Error fetching item count:", countError);
+    else console.log(`Total active items in database: ${totalCount}`);
+
+    // 2. Fetch all pages until totalCount is reached
+    while (keepFetching) {
+      const from = page * pageSize;
+      const to = from + pageSize - 1;
+
+      const { data, error } = await supabase
+        .from("item_master")
+        .select(
+          `
+          id,
+          item_name,
+          guid,
+          alter_id,
+          uom,
+          hsn,
+          tax,
+          item_unit_conversions(
+            from_unit,
+            to_unit,
+            factor
+          )
         `
-    id,
-    item_name,
-    guid,
-    alter_id,
-    uom,
-    hsn,
-    tax,
+        )
+        .eq("status", true)
+        .order("id", { ascending: true }) // Stable sorting on primary key
+        .range(from, to);
 
-    item_unit_conversions(
-        from_unit,
-        to_unit,
-        factor
-    )
-`,
-      )
-      .eq("status", true)
-      .order("item_name", { ascending: true });
+      if (error) {
+        console.error(`Error on page ${page}:`, error);
+        break;
+      }
 
-    if (error) {
-      console.error("Product fetch error:", error);
-      setLoadingProducts(false);
-      return;
+      if (data && data.length > 0) {
+        allProducts = [...allProducts, ...data];
+        console.log(`Fetched page ${page}: ${data.length} items (Total so far: ${allProducts.length})`);
+
+        // Check if we have fetched all items according to total count or empty responses
+        if (allProducts.length >= (totalCount || 0) || data.length === 0) {
+          keepFetching = false;
+        } else {
+          page++;
+        }
+      } else {
+        keepFetching = false;
+      }
     }
 
-    const formatted = (data || []).map((item) => ({
+    const formatted = allProducts.map((item) => ({
       id: item.id,
       name: item.item_name || "",
       code: String(item.id),
-
-      // Base stock unit
       unit: item.uom || "Nos",
-
-      // All available conversions
       conversions: item.item_unit_conversions || [],
-
       hsn: item.hsn || "",
       tax: item.tax || "",
     }));
 
     setProductOptions(formatted);
+  } catch (err) {
+    console.error("Unexpected error fetching products:", err);
+  } finally {
     setLoadingProducts(false);
-  };
+  }
+};
+
+
+
+
+
+
   const handleAddTemporaryProduct = () => {
     if (!tempProduct.name.trim()) return;
 

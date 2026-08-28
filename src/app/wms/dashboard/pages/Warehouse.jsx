@@ -6,18 +6,19 @@ import { ShopOutlined } from "@ant-design/icons";
 
 import { supabase } from "../../../lib/supabase";
 import MapCanvas from "../components/create-warehouse/MapCanvas";
+import RackDetailView from "../components/create-warehouse/RackDetailView";
+import SRackDetailView from "../components/create-warehouse/SRackDetailView";
+import FSADetailView from "../components/create-warehouse/FSADetailView";
 
 const { Option } = Select;
 
 export default function Warehouse() {
   const [warehouses, setWarehouses] = useState([]);
-
   const [selectedWarehouse, setSelectedWarehouse] = useState(null);
-
   const [tiers, setTiers] = useState([]);
   const [selectedTier, setSelectedTier] = useState(null);
-
   const [elements, setElements] = useState([]);
+  const [selectedElement, setSelectedElement] = useState(null);
 
   // Load warehouses
   useEffect(() => {
@@ -73,35 +74,26 @@ export default function Warehouse() {
   };
 
   return (
-   <div className="w-full h-full flex bg-gray-100 overflow-hidden rounded-4xl">
-      {/* LEFT 70% AREA */}
-      <div className="basis-[80%] flex flex-col bg-white border-r overflow-hidden">
-        <div className="h-16 px-6 flex items-center border-b">
-          <Typography.Title level={4} style={{ margin: 0 }}>
-            <ShopOutlined />
-            &nbsp; Warehouse Viewer
-          </Typography.Title>
-        </div>
-
-        {/* Dropdown Section */}
-        <div className="p-5">
+    <div className="w-full h-full flex flex-row gap-5 p-5 bg-gray-100 box-border overflow-hidden">
+      {/* LEFT AREA: MAP SECTION (Takes up all remaining space) */}
+      <div className="flex-1 min-w-0 flex flex-col bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+        {/* Dropdown Header */}
+        <div className="p-5 border-b border-gray-100 bg-white shrink-0">
           <div className="grid grid-cols-2 gap-4">
             {/* Warehouse Dropdown */}
             <div>
-              <label className="text-xs text-gray-500">Select Warehouse</label>
-
+              <label className="text-xs text-gray-500 font-medium block mb-1">
+                Select Warehouse
+              </label>
               <Select
                 className="w-full"
                 placeholder="Choose Warehouse"
                 value={selectedWarehouse?.id}
                 onChange={async (id) => {
                   const warehouse = warehouses.find((w) => w.id === id);
-
                   setSelectedWarehouse(warehouse);
-
                   setSelectedTier(null);
                   setElements([]);
-
                   await loadTiers(id);
                 }}
               >
@@ -115,8 +107,9 @@ export default function Warehouse() {
 
             {/* Tier Dropdown */}
             <div>
-              <label className="text-xs text-gray-500">Select Tier</label>
-
+              <label className="text-xs text-gray-500 font-medium block mb-1">
+                Select Tier
+              </label>
               <Select
                 className="w-full"
                 placeholder="Choose Tier"
@@ -124,9 +117,7 @@ export default function Warehouse() {
                 disabled={!selectedWarehouse}
                 onChange={async (id) => {
                   const tier = tiers.find((t) => t.id === id);
-
                   setSelectedTier(tier);
-
                   await loadElements(id);
                 }}
               >
@@ -140,34 +131,46 @@ export default function Warehouse() {
           </div>
         </div>
 
-        <Divider className="my-0" />
-
-        {/* Canvas Area */}
-        <div className="flex-1 bg-gray-200">
+        {/* MAP CANVAS PANEL */}
+        <div className="flex-1 min-h-0 bg-gray-200 relative">
           {selectedTier ? (
             <MapCanvas
               warehouse={selectedWarehouse}
               tier={selectedTier}
               elements={elements}
-              onElementSelect={() => {}}
+              onElementSelect={(element) => setSelectedElement(element)}
             />
           ) : (
-            <div className="h-full flex items-center justify-center text-gray-400">
+            <div className="h-full w-full flex items-center justify-center text-gray-400">
               Select warehouse and tier to view layout
             </div>
           )}
         </div>
       </div>
 
-     
-      {/* RIGHT DETAILS AREA */}
-<div className="basis-[20%] bg-white overflow-hidden">
-        <div className="p-5">
-          <Typography.Title level={5}>Warehouse Details</Typography.Title>
+      {/* RIGHT AREA: DETAILS SECTION (Fixed Width, Side-by-Side) */}
+      <div className="w-115 shrink-0 flex flex-col bg-white border border-gray-200 rounded-xl p-5 shadow-sm overflow-y-auto">
+        <h3 className="font-semibold text-gray-800 text-sm border-b border-gray-100 pb-3 mb-4 shrink-0">
+          Details
+        </h3>
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          {!selectedElement && (
+            <div className="flex h-full items-center justify-center text-gray-400">
+              Select a rack to view details
+            </div>
+          )}
 
-          <p className="text-gray-400 text-sm">
-            Details panel will be added here
-          </p>
+          {selectedElement?.type === "rack" && (
+            <RackDetailView item={selectedElement} />
+          )}
+
+          {selectedElement?.type === "srack" && (
+            <SRackDetailView item={selectedElement} />
+          )}
+
+          {selectedElement?.type === "fsa" && (
+            <FSADetailView item={selectedElement} />
+          )}
         </div>
       </div>
     </div>

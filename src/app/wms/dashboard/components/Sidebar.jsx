@@ -68,7 +68,7 @@ const menuGroups = [
 
 export default function Sidebar({ activeTab, setActiveTab }) {
   return (
-    <aside className="w-64 bg-[#3d0505] flex flex-col justify-between shrink-0 h-screen">
+    <aside className="w-64 bg-[#F2F2F2] flex flex-col justify-between shrink-0 h-screen">
       
       {/* Upper Scrollable Content Area */}
       <div className="flex flex-col flex-1 min-h-0">

@@ -156,80 +156,68 @@ export default function SummaryCards({
       </Card>
 
       <Modal
-  title={
-    <span className="text-lg font-semibold">
-      Create Goods Receipt Note (GRN)
-    </span>
-  }
-  open={isModalOpen}
-  onCancel={handleClose}
-  width={1100}
-  footer={[
-    <Button key="cancel" onClick={handleClose}>
-      Cancel
-    </Button>,
-    <Button key="save" type="primary">
-      Save GRN
-    </Button>,
-  ]}
->
-  <div className="space-y-5">
+        title={
+          <span className="text-lg font-semibold">
+            Create Goods Receipt Note (GRN)
+          </span>
+        }
+        open={isModalOpen}
+        onCancel={handleClose}
+        width={1100}
+        footer={[
+          <Button key="cancel" onClick={handleClose}>
+            Cancel
+          </Button>,
+          <Button key="save" type="primary">
+            Save GRN
+          </Button>,
+        ]}
+      >
+        <div className="space-y-5">
+          {/* Header Section */}
 
-    {/* Header Section */}
+          <Card size="small">
+            <div className="grid grid-cols-2 gap-5">
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Supplier Invoice No
+                </label>
 
-    <Card size="small">
-      <div className="grid grid-cols-2 gap-5">
+                <Input placeholder="Invoice Number" />
+              </div>
 
-        <div>
-          <label className="block text-sm font-medium mb-1">
-            Supplier Invoice No
-          </label>
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Invoice Date
+                </label>
 
-          <Input placeholder="Invoice Number" />
+                <DatePicker className="w-full" />
+              </div>
+            </div>
+          </Card>
+
+          {/* Items Table */}
+
+          <Card size="small" title="Purchase Order Items">
+            <Table
+              columns={columns}
+              dataSource={data}
+              pagination={false}
+              bordered
+              size="small"
+              scroll={{ y: 350 }}
+            />
+          </Card>
+
+          {/* Remarks */}
+
+          <Card size="small">
+            <label className="block text-sm font-medium mb-2">Remarks</label>
+
+            <Input.TextArea rows={3} placeholder="Remarks..." />
+          </Card>
         </div>
-
-        <div>
-          <label className="block text-sm font-medium mb-1">
-            Invoice Date
-          </label>
-
-          <DatePicker className="w-full" />
-        </div>
-
-      </div>
-    </Card>
-
-    {/* Items Table */}
-
-    <Card
-      size="small"
-      title="Purchase Order Items"
-    >
-      <Table
-        columns={columns}
-        dataSource={data}
-        pagination={false}
-        bordered
-        size="small"
-        scroll={{ y: 350 }}
-      />
-    </Card>
-
-    {/* Remarks */}
-
-    <Card size="small">
-      <label className="block text-sm font-medium mb-2">
-        Remarks
-      </label>
-
-      <Input.TextArea
-        rows={3}
-        placeholder="Remarks..."
-      />
-    </Card>
-
-  </div>
-</Modal>
+      </Modal>
     </div>
   );
 }

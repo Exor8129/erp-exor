@@ -11,8 +11,8 @@ export default function SettingsContent({
   const Component = selectedItem?.component;
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 min-h-175">
-
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 min-w-0">
+      
       <div className="border-b border-slate-200 pb-4 mb-6">
         <h2 className="text-2xl font-semibold">
           {selectedItem?.label}

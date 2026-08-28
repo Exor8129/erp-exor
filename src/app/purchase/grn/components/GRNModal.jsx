@@ -188,11 +188,17 @@ const handleDeleteGRN = async () => {
       return alert("Enter at least one received quantity.");
     }
 
-    const formattedItems = entries.map(([itemId, qty]) => ({
-      po_item_id: itemId,
-      received_qty: Number(qty),
-    }));
+   const formattedItems = entries.map(([itemId, qty]) => {
+  // Find the original item from props matching this po_item_id
+  const selectedItem = items.find((item) => item.id === itemId);
 
+  return {
+    po_item_id: itemId,
+    received_qty: Number(qty),
+    // Fall back to item_id directly if product_id is not present on the record
+    item_id: selectedItem?.product_id || selectedItem?.item_id || null, 
+  };
+});
     try {
       let result;
 

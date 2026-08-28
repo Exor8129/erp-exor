@@ -13,7 +13,7 @@ import {
 export default function Header() {
   return (
     /* Flat background-aligned container */
-    <header className="bg-[#972626] w-full py-2 flex items-center justify-between transition-all shrink-0">
+    <header className="bg-[#F2F2F2] w-full py-2 flex items-center justify-between transition-all shrink-0">
 
       {/* Left Side: Title & Info */}
       <div>

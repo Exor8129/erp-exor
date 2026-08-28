@@ -385,6 +385,7 @@ export default function WarehouseDesigner() {
 
   // CANVAS OBJECT SELECTION ROUTER
   const handleElementSelect = (item) => {
+
     if (!item) {
       clearFormState();
       return;

@@ -1,15 +1,16 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { supabase } from "../../../lib/supabase";
-import { Eye, Pencil, Printer, Trash2 } from "lucide-react";
+import { Eye, Pencil, Printer, Trash2, Search, X } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { message } from "antd";
 import { useRouter } from "next/navigation";
 import LogisticsModal from "./subcontents/LogisticsModal";
 import ViewPurchaseOrderModal from "./subcontents/ViewPurchaseOrderModal";
-
+import { Input } from "@/components/ui/input";
+// import { Search, X } from "lucide-react";
 const TableRow = ({
   id,
   poId,
@@ -87,7 +88,7 @@ const TableRow = ({
           }}
           onClick={onCreateCPO}
         >
-          <div className="w-10 h-8 border border-current rounded-full flex items-center justify-center text-[8px] font-bold">
+          <div className="w-9 h-4 border border-current rounded-full flex items-center justify-center text-[8px] font-bold">
             G R N
           </div>
         </button>
@@ -134,6 +135,7 @@ const TableRow = ({
 export default function PurchaseOrdersTable() {
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState("");
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [selectedPO, setSelectedPO] = useState(null);
   const [loadingPO, setLoadingPO] = useState(false);
@@ -147,6 +149,7 @@ export default function PurchaseOrdersTable() {
 
   useEffect(() => {
     fetchTransporters();
+    fetchPurchaseOrders();
   }, []);
 
   const fetchTransporters = async () => {
@@ -168,11 +171,6 @@ export default function PurchaseOrdersTable() {
     shipment_status: "Pending Dispatch",
     remarks: "",
   });
-
-  useEffect(() => {
-    fetchPurchaseOrders();
-    fetchTransporters();
-  }, []);
 
   const fetchShipments = async (poId) => {
     try {
@@ -249,6 +247,18 @@ export default function PurchaseOrdersTable() {
     setPurchaseOrders(merged);
     setLoading(false);
   };
+
+  // Real-time filtering by PO Number or Vendor Name
+  const filteredPurchaseOrders = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase();
+    if (!query) return purchaseOrders;
+
+    return purchaseOrders.filter((po) => {
+      const poNum = po.po_number?.toString().toLowerCase() || "";
+      const vendorName = po.vendor_name?.toString().toLowerCase() || "";
+      return poNum.includes(query) || vendorName.includes(query);
+    });
+  }, [purchaseOrders, searchTerm]);
 
   const handleDelete = async (id) => {
     const confirmed = window.confirm("Delete this Purchase Order?");
@@ -591,7 +601,6 @@ export default function PurchaseOrdersTable() {
         shippingAddress = data;
       }
 
-      // Fetch line items directly from the purchase schema
       const { data: rawItems } = await supabase
         .schema("purchase")
         .from("purchase_order_items")
@@ -599,7 +608,6 @@ export default function PurchaseOrdersTable() {
         .eq("po_id", poId)
         .order("created_at");
 
-      // Extract unique non-null product IDs for cross-schema optimization
       const productIds = Array.from(
         new Set((rawItems || []).map((i) => i.product_id).filter(Boolean)),
       );
@@ -607,17 +615,15 @@ export default function PurchaseOrdersTable() {
       let itemMasterMap = {};
       if (productIds.length > 0) {
         const { data: masterData } = await supabase
-          .from("item_master") // Defaults to public schema
+          .from("item_master")
           .select("id, uom")
           .in("id", productIds);
 
-        // Convert lookup array to a hashmap
         (masterData || []).forEach((row) => {
           itemMasterMap[row.id] = row.uom;
         });
       }
 
-      // Attach item_master context dynamically to mirror the required schema structure
       const integratedItems = (rawItems || []).map((item) => ({
         ...item,
         item_master: item.product_id
@@ -724,8 +730,6 @@ export default function PurchaseOrdersTable() {
 
       alert("Shipment added successfully");
       await fetchShipments(selectedLogisticsPO.id);
-
-      // Refresh list to instantly update shipment count badge on row
       await fetchPurchaseOrders();
       setShipmentDrawerOpen(false);
     } catch (err) {
@@ -735,83 +739,114 @@ export default function PurchaseOrdersTable() {
   };
 
   return (
-   <div>
-      {/* 1. Strict Height Wrapper (Fits roughly 5-6 rows comfortably) */}
-      <div className="w-full h-95 bg-white rounded-xl shadow-sm border border-slate-100 flex flex-col overflow-hidden">
-        
-        <section className="bg-white rounded-xl shadow-sm border border-slate-100 flex flex-col overflow-hidden w-full"> 
-        
-        {/* Card Header */}
-        <div className="p-4 border-b border-slate-100 shrink-0 bg-white">
-          <h2 className="font-bold text-slate-700 uppercase text-xs tracking-wider">
-            Active Purchase Orders
-          </h2>
-        </div>
+    <div>
+      <div className="w-full bg-white rounded-xl shadow-sm border border-slate-100 flex flex-col overflow-hidden">
+        <section className="bg-white rounded-xl shadow-sm border border-slate-100 flex flex-col overflow-hidden w-full">
+          {/* Card Header with Title & Search Bar */}
+          <div className="p-4 border-b border-slate-100 shrink-0 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <h2 className="font-bold text-slate-700 uppercase text-xs tracking-wider">
+              Active Purchase Orders
+            </h2>
 
-        {/* FORCE RESIZE USING INLINE CSS:
-          This guarantees a hard height ceiling and forces scrollbars 
-          even if Tailwind's arbitrary compilation is failing or bugged.
-        */}
-        <div 
-          style={{ height: "380px", overflowY: "auto", display: "block" }}
-          className="w-full custom-scrollbar"
-        >
-          <table className="w-full text-left text-sm border-collapse table-auto">
-            <thead className="sticky top-0 z-20 bg-slate-50 shadow-[0_1px_0_0_rgba(226,232,240,1)]">
-              <tr>
-                <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">PO #</th>
-                <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">Vendor</th>
-                <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">Date</th>
-                <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">Amount</th>
-                <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">Status</th>
-                <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">Logistics</th>
-                <th className="px-6 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">Action</th>
-              </tr>
-            </thead>
-
-            <tbody className="divide-y divide-slate-100 bg-white">
-              {purchaseOrders.length > 0 ? (
-                purchaseOrders.map((po) => (
-                  <TableRow
-                    key={po.id}
-                    id={po.po_number}
-                    poId={po.id}
-                    vendor={po.vendor_name}
-                    date={new Date(po.created_at).toLocaleDateString("en-IN")}
-                    amount={
-                      po.qty_only_mode ? (
-                        <span className="px-2 py-1 text-xs rounded-full bg-blue-50 text-blue-600 font-medium">
-                          Qty Only
-                        </span>
-                      ) : (
-                        `₹${Number(po.grand_total || 0).toLocaleString("en-IN")}`
-                      )
-                    }
-                    status={po.status}
-                    logistics={{
-                      shipmentCount: po.shipment_count || 0,
-                    }}
-                    onView={() => handleView(po.id)}
-                    onPrint={() => handlePrint(po.id)}
-                    onEdit={() => router.push(`/purchase/editpo/${po.id}`)}
-                    onDelete={() => handleDelete(po.id)}
-                    onLogistics={() => openLogisticsModal(po)}
-                    onCreateCPO={() =>
-                      router.push(`/purchase/grn/${po.id}`)
-                    }
-                  />
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={7} className="text-center py-8 text-slate-500">
-                    No purchase orders found.
-                  </td>
-                </tr>
+            {/* Half-Width Search Bar */}
+            <div className="relative flex items-center w-72">
+              <Search className="absolute left-2.5 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+              <Input
+                type="text"
+                placeholder="Search..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="h-8 pl-8 pr-7 text-xs bg-white border-slate-300 rounded-md focus-visible:ring-1 focus-visible:ring-sky-500"
+              />
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm("")}
+                  className="absolute right-2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full"
+                >
+                  <X className="h-3 w-3" />
+                </button>
               )}
-            </tbody>
-          </table>
-        </div>
-      </section>
+            </div>
+          </div>
+
+          {/* Scrollable Table Container */}
+          <div
+            style={{ height: "380px", overflowY: "auto", display: "block" }}
+            className="w-full custom-scrollbar"
+          >
+            <table className="w-full text-left text-sm border-collapse table-auto">
+              <thead className="sticky top-0 z-20 bg-slate-50 shadow-[0_1px_0_0_rgba(226,232,240,1)]">
+                <tr>
+                  <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">
+                    PO #
+                  </th>
+                  <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">
+                    Vendor
+                  </th>
+                  <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">
+                    Date
+                  </th>
+                  <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">
+                    Amount
+                  </th>
+                  <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">
+                    Status
+                  </th>
+                  <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">
+                    Logistics
+                  </th>
+                  <th className="px-6 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">
+                    Action
+                  </th>
+                </tr>
+              </thead>
+
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {filteredPurchaseOrders.length > 0 ? (
+                  filteredPurchaseOrders.map((po) => (
+                    <TableRow
+                      key={po.id}
+                      id={po.po_number}
+                      poId={po.id}
+                      vendor={po.vendor_name}
+                      date={new Date(po.created_at).toLocaleDateString("en-IN")}
+                      amount={
+                        po.qty_only_mode ? (
+                          <span className="px-2 py-1 text-xs rounded-full bg-blue-50 text-blue-600 font-medium">
+                            Qty Only
+                          </span>
+                        ) : (
+                          `₹${Number(po.grand_total || 0).toLocaleString("en-IN")}`
+                        )
+                      }
+                      status={po.status}
+                      logistics={{
+                        shipmentCount: po.shipment_count || 0,
+                      }}
+                      onView={() => handleView(po.id)}
+                      onPrint={() => handlePrint(po.id)}
+                      onEdit={() => router.push(`/purchase/editpo/${po.id}`)}
+                      onDelete={() => handleDelete(po.id)}
+                      onLogistics={() => openLogisticsModal(po)}
+                      onCreateCPO={() => router.push(`/purchase/grn/${po.id}`)}
+                    />
+                  ))
+                ) : (
+                  <tr>
+                    <td
+                      colSpan={7}
+                      className="text-center py-8 text-slate-500 text-xs"
+                    >
+                      {searchTerm
+                        ? `No results found for "${searchTerm}"`
+                        : "No purchase orders found."}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
       </div>
 
       {/* View Modal */}
