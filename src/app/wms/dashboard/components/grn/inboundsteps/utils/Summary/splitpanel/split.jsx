@@ -855,7 +855,7 @@ const SplitDrawer = ({
         }}
         containerid={selectedContainerID}
         grnItemId={selectedItemID}
-        containers={containers}
+        
       />
     </div>
   );

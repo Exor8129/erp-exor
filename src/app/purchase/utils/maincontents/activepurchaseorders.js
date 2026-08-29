@@ -10,13 +10,12 @@ import { useRouter } from "next/navigation";
 import LogisticsModal from "./subcontents/LogisticsModal";
 import ViewPurchaseOrderModal from "./subcontents/ViewPurchaseOrderModal";
 import { Input } from "@/components/ui/input";
-// import { Search, X } from "lucide-react";
+
 const TableRow = ({
   id,
   poId,
   vendor,
   date,
-  amount,
   status,
   logistics,
   onView,
@@ -31,11 +30,9 @@ const TableRow = ({
     <td className="px-4 py-4 text-slate-600">{vendor}</td>
     <td className="px-4 py-4 text-slate-400 text-xs">{date}</td>
 
-    <td className="px-4 py-4 font-medium text-slate-700">{amount}</td>
-
     <td className="px-4 py-4">
       <span
-        className={`px-2 py-1 rounded text-[10px] font-bold text-white ${
+        className={`px-2 py-1 rounded text-[10px] font-bold text-white uppercase ${
           status === "approved"
             ? "bg-green-500"
             : status === "submitted"
@@ -51,20 +48,7 @@ const TableRow = ({
     <td className="px-4 py-4">
       <button
         onClick={onLogistics}
-        className="
-        inline-flex
-        items-center
-        gap-2
-        px-3
-        py-1.5
-        rounded-full
-        bg-sky-50
-        text-sky-700
-        text-xs
-        font-semibold
-        hover:bg-sky-100
-        transition
-      "
+        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-sky-50 text-sky-700 text-xs font-semibold hover:bg-sky-100 transition"
       >
         🚚{" "}
         {logistics?.shipmentCount > 0
@@ -136,6 +120,7 @@ export default function PurchaseOrdersTable() {
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+  const [activeTab, setActiveTab] = useState("all");
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [selectedPO, setSelectedPO] = useState(null);
   const [loadingPO, setLoadingPO] = useState(false);
@@ -153,13 +138,18 @@ export default function PurchaseOrdersTable() {
   }, []);
 
   const fetchTransporters = async () => {
-    const { data } = await supabase
-      .from("transporters")
-      .select("id, transporter_name")
-      .eq("active", true)
-      .order("transporter_name");
+    try {
+      const { data, error } = await supabase
+        .from("transporters")
+        .select("id, transporter_name")
+        .eq("active", true)
+        .order("transporter_name");
 
-    setTransporters(data || []);
+      if (error) throw error;
+      setTransporters(data || []);
+    } catch (err) {
+      console.error("Transporter fetch error:", err);
+    }
   };
 
   const [shipmentForm, setShipmentForm] = useState({
@@ -169,6 +159,8 @@ export default function PurchaseOrdersTable() {
     expected_delivery_date: null,
     freight_amount: 0,
     shipment_status: "Pending Dispatch",
+    no_of_boxes: 0,
+    weight_kg: 0,
     remarks: "",
   });
 
@@ -190,75 +182,129 @@ export default function PurchaseOrdersTable() {
   };
 
   const fetchPurchaseOrders = async () => {
-    setLoading(true);
+    try {
+      setLoading(true);
 
-    const { data: poData, error: poError } = await supabase
-      .schema("purchase")
-      .from("purchase_orders")
-      .select(
-        `
-        id,
-        po_number,
-        status,
-        grand_total,
-        created_at,
-        supplier_id,
-        shipping_address_id,
-        qty_only_mode,
-        shipments(count)
-      `,
-      )
-      .order("created_at", { ascending: false });
+      const { data: poData, error: poError } = await supabase
+        .schema("purchase")
+        .from("purchase_orders")
+        .select(
+          `
+          id,
+          po_number,
+          status,
+          grand_total,
+          total_qty,
+          notes,
+          created_at,
+          supplier_id,
+          shipping_address_id,
+          qty_only_mode
+        `,
+        )
+        .order("created_at", { ascending: false });
 
-    if (poError) {
-      console.error("PO fetch error:", poError);
-      setLoading(false);
-      return;
-    }
+      if (poError) throw poError;
 
-    const supplierIds = [
-      ...new Set((poData || []).map((po) => po.supplier_id).filter(Boolean)),
-    ];
+      const supplierIds = [
+        ...new Set((poData || []).map((po) => po.supplier_id).filter(Boolean)),
+      ];
 
-    let vendorMap = {};
+      let vendorMap = {};
+      if (supplierIds.length > 0) {
+        const { data: vendorData, error: vendorError } = await supabase
+          .from("vendors")
+          .select("id, vendor_name")
+          .in("id", supplierIds);
 
-    if (supplierIds.length > 0) {
-      const { data: vendorData, error: vendorError } = await supabase
-        .from("vendors")
-        .select("id, vendor_name")
-        .in("id", supplierIds);
-
-      if (vendorError) {
-        console.error("Vendor fetch error:", vendorError);
-      } else {
-        vendorMap = (vendorData || []).reduce((acc, vendor) => {
-          acc[vendor.id] = vendor.vendor_name;
-          return acc;
-        }, {});
+        if (vendorError) {
+          console.error("Vendor fetch error:", vendorError);
+        } else {
+          vendorMap = (vendorData || []).reduce((acc, vendor) => {
+            acc[vendor.id] = vendor.vendor_name;
+            return acc;
+          }, {});
+        }
       }
+
+      const poIds = (poData || []).map((po) => po.id);
+      let shipmentCountsMap = {};
+
+      if (poIds.length > 0) {
+        const { data: shipmentData, error: shipmentError } = await supabase
+          .schema("purchase")
+          .from("shipments")
+          .select("po_id");
+
+        if (!shipmentError && shipmentData) {
+          shipmentData.forEach((item) => {
+            shipmentCountsMap[item.po_id] =
+              (shipmentCountsMap[item.po_id] || 0) + 1;
+          });
+        }
+      }
+
+      const merged = (poData || []).map((po) => ({
+        ...po,
+        vendor_name: vendorMap[po.supplier_id] || "-",
+        shipment_count: shipmentCountsMap[po.id] || 0,
+      }));
+
+      setPurchaseOrders(merged);
+    } catch (err) {
+      console.error("PO fetch error:", err);
+      message.error("Failed to load purchase orders");
+    } finally {
+      setLoading(false);
     }
-
-    const merged = (poData || []).map((po) => ({
-      ...po,
-      vendor_name: vendorMap[po.supplier_id] || "-",
-      shipment_count: po.shipments?.[0]?.count || 0,
-    }));
-
-    setPurchaseOrders(merged);
-    setLoading(false);
   };
 
-  // Real-time filtering by PO Number or Vendor Name
+  // Status counts calculation
+  const tabCounts = useMemo(() => {
+    return {
+      all: purchaseOrders.length,
+      waiting_lr: purchaseOrders.filter(
+        (po) => po.status?.toLowerCase() === "waiting_lr",
+      ).length,
+      in_transit: purchaseOrders.filter(
+        (po) => po.status?.toLowerCase() === "in_transit",
+      ).length,
+      at_destination: purchaseOrders.filter(
+        (po) => po.status?.toLowerCase() === "at_destination",
+      ).length,
+      grn_created: purchaseOrders.filter(
+        (po) => po.status?.toLowerCase() === "grn_created",
+      ).length,
+      inbound: purchaseOrders.filter(
+        (po) => po.status?.toLowerCase() === "inbound",
+      ).length,
+      draft: purchaseOrders.filter((po) => po.status?.toLowerCase() === "draft")
+        .length,
+      completed: purchaseOrders.filter(
+        (po) => po.status?.toLowerCase() === "completed",
+      ).length,
+    };
+  }, [purchaseOrders]);
+
+  // Combined Search and Tab Filtering
   const filteredPurchaseOrders = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
-    if (!query) return purchaseOrders;
 
     return purchaseOrders.filter((po) => {
+      // Tab Filter
+      const matchesTab =
+        activeTab === "all" ||
+        po.status?.toLowerCase() === activeTab.toLowerCase();
+
+      // Search Filter
       const poNum = po.po_number?.toString().toLowerCase() || "";
       const vendorName = po.vendor_name?.toString().toLowerCase() || "";
-      return poNum.includes(query) || vendorName.includes(query);
+      const matchesSearch =
+        !query || poNum.includes(query) || vendorName.includes(query);
+
+      return matchesTab && matchesSearch;
     });
-  }, [purchaseOrders, searchTerm]);
+  }, [purchaseOrders, searchTerm, activeTab]);
 
   const handleDelete = async (id) => {
     const confirmed = window.confirm("Delete this Purchase Order?");
@@ -738,139 +784,173 @@ export default function PurchaseOrdersTable() {
     }
   };
 
+  const tabs = [
+    { key: "all", label: "All POs", count: tabCounts.all },
+    { key: "waiting_lr", label: "Waiting LR", count: tabCounts.waiting_lr },
+    { key: "in_transit", label: "In Transit", count: tabCounts.in_transit },
+    {
+      key: "at_destination",
+      label: "At Destination",
+      count: tabCounts.at_destination,
+    },
+    { key: "grn_created", label: "Grn Created", count: tabCounts.grn_created },
+    { key: "inbound", label: "Inbound", count: tabCounts.inbound },
+    { key: "draft", label: "Draft", count: tabCounts.draft },
+    { key: "completed", label: "Completed", count: tabCounts.completed },
+  ];
+
   return (
     <div>
-      <div className="w-full bg-white rounded-xl shadow-sm border border-slate-100 flex flex-col overflow-hidden">
-        <section className="bg-white rounded-xl shadow-sm border border-slate-100 flex flex-col overflow-hidden w-full">
-          {/* Card Header with Title & Search Bar */}
-          <div className="p-4 border-b border-slate-100 shrink-0 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <h2 className="font-bold text-slate-700 uppercase text-xs tracking-wider">
-              Active Purchase Orders
-            </h2>
+  <div className="w-full bg-white rounded-xl shadow-sm border border-slate-100 flex flex-col overflow-hidden">
+    <section className="bg-white rounded-xl shadow-sm border border-slate-100 flex flex-col overflow-hidden w-full">
+      {/* Card Header: Title & Search Bar */}
+      <div className="p-4 border-b border-slate-100 shrink-0 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        {/* Title */}
+        <h2 className="font-bold text-slate-700 uppercase text-xs tracking-wider shrink-0">
+          Purchase Orders
+        </h2>
 
-            {/* Half-Width Search Bar */}
-            <div className="relative flex items-center w-72">
-              <Search className="absolute left-2.5 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
-              <Input
-                type="text"
-                placeholder="Search..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="h-8 pl-8 pr-7 text-xs bg-white border-slate-300 rounded-md focus-visible:ring-1 focus-visible:ring-sky-500"
-              />
-              {searchTerm && (
-                <button
-                  onClick={() => setSearchTerm("")}
-                  className="absolute right-2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Scrollable Table Container */}
-          <div
-            style={{ height: "380px", overflowY: "auto", display: "block" }}
-            className="w-full custom-scrollbar"
-          >
-            <table className="w-full text-left text-sm border-collapse table-auto">
-              <thead className="sticky top-0 z-20 bg-slate-50 shadow-[0_1px_0_0_rgba(226,232,240,1)]">
-                <tr>
-                  <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">
-                    PO #
-                  </th>
-                  <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">
-                    Vendor
-                  </th>
-                  <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">
-                    Date
-                  </th>
-                  <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">
-                    Amount
-                  </th>
-                  <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">
-                    Status
-                  </th>
-                  <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">
-                    Logistics
-                  </th>
-                  <th className="px-6 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">
-                    Action
-                  </th>
-                </tr>
-              </thead>
-
-              <tbody className="divide-y divide-slate-100 bg-white">
-                {filteredPurchaseOrders.length > 0 ? (
-                  filteredPurchaseOrders.map((po) => (
-                    <TableRow
-                      key={po.id}
-                      id={po.po_number}
-                      poId={po.id}
-                      vendor={po.vendor_name}
-                      date={new Date(po.created_at).toLocaleDateString("en-IN")}
-                      amount={
-                        po.qty_only_mode ? (
-                          <span className="px-2 py-1 text-xs rounded-full bg-blue-50 text-blue-600 font-medium">
-                            Qty Only
-                          </span>
-                        ) : (
-                          `₹${Number(po.grand_total || 0).toLocaleString("en-IN")}`
-                        )
-                      }
-                      status={po.status}
-                      logistics={{
-                        shipmentCount: po.shipment_count || 0,
-                      }}
-                      onView={() => handleView(po.id)}
-                      onPrint={() => handlePrint(po.id)}
-                      onEdit={() => router.push(`/purchase/editpo/${po.id}`)}
-                      onDelete={() => handleDelete(po.id)}
-                      onLogistics={() => openLogisticsModal(po)}
-                      onCreateCPO={() => router.push(`/purchase/grn/${po.id}`)}
-                    />
-                  ))
-                ) : (
-                  <tr>
-                    <td
-                      colSpan={7}
-                      className="text-center py-8 text-slate-500 text-xs"
-                    >
-                      {searchTerm
-                        ? `No results found for "${searchTerm}"`
-                        : "No purchase orders found."}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
+        {/* Search Bar - Full Width on Mobile, Fixed/Auto Width on Larger Screens */}
+        <div className="relative flex items-center w-full sm:w-72">
+          <Search className="absolute left-2.5 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+          <Input
+            type="text"
+            placeholder="Search PO # or Vendor..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="h-8 pl-8 pr-7 text-xs bg-white border-slate-300 rounded-md focus-visible:ring-1 focus-visible:ring-sky-500 w-full"
+          />
+          {searchTerm && (
+            <button
+              onClick={() => setSearchTerm("")}
+              className="absolute right-2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* View Modal */}
-      <ViewPurchaseOrderModal
-        viewModalOpen={viewModalOpen}
-        setViewModalOpen={setViewModalOpen}
-        loadingPO={loadingPO}
-        selectedPO={selectedPO}
-      />
+      {/* Tabs Row - Full Width Below Header */}
+      <div className="px-4 py-2 bg-slate-50/50 border-b border-slate-100 overflow-x-auto custom-scrollbar">
+        <div className="flex items-center gap-1.5 w-max">
+          {tabs.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 flex items-center gap-1.5 whitespace-nowrap ${
+                activeTab === tab.key
+                  ? "bg-white text-slate-800 shadow-sm border border-slate-200/80 font-semibold"
+                  : "text-slate-500 hover:text-slate-800 hover:bg-slate-200/60"
+              }`}
+            >
+              <span>{tab.label}</span>
+              <span
+                className={`px-1.5 py-0.5 rounded-full text-[10px] ${
+                  activeTab === tab.key
+                    ? "bg-slate-100 text-slate-700 font-bold"
+                    : "bg-slate-200/60 text-slate-500"
+                }`}
+              >
+                {tab.count}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
 
-      {/* Logistics Modal */}
-      <LogisticsModal
-        logisticsModalOpen={logisticsModalOpen}
-        setLogisticsModalOpen={setLogisticsModalOpen}
-        selectedLogisticsPO={selectedLogisticsPO}
-        shipments={shipments}
-        setShipmentDrawerOpen={setShipmentDrawerOpen}
-        handleTrackShipment={handleTrackShipment}
-        shipmentDrawerOpen={shipmentDrawerOpen}
-        shipmentForm={shipmentForm}
-        setShipmentForm={setShipmentForm}
-        transporters={transporters}
-        saveShipment={saveShipment}
-      />
-    </div>
+      {/* Scrollable Table Container */}
+      <div
+        style={{ height: "380px", overflowY: "auto", display: "block" }}
+        className="w-full custom-scrollbar"
+      >
+        <table className="w-full text-left text-sm border-collapse table-auto">
+          {/* Table Header */}
+          <thead className="sticky top-0 z-20 bg-slate-50 shadow-[0_1px_0_0_rgba(226,232,240,1)]">
+            <tr>
+              <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">
+                PO #
+              </th>
+              <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">
+                Vendor
+              </th>
+              <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">
+                Date
+              </th>
+              <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">
+                Status
+              </th>
+              <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">
+                Logistics
+              </th>
+              <th className="px-6 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">
+                Action
+              </th>
+            </tr>
+          </thead>
+
+          {/* Table Body */}
+          <tbody className="divide-y divide-slate-100 bg-white">
+            {filteredPurchaseOrders.length > 0 ? (
+              filteredPurchaseOrders.map((po) => (
+                <TableRow
+                  key={po.id}
+                  id={po.po_number}
+                  poId={po.id}
+                  vendor={po.vendor_name}
+                  date={new Date(po.created_at).toLocaleDateString("en-IN")}
+                  status={po.status}
+                  logistics={{
+                    shipmentCount: po.shipment_count || 0,
+                  }}
+                  onView={() => handleView(po.id)}
+                  onPrint={() => handlePrint(po.id)}
+                  onEdit={() => router.push(`/purchase/editpo/${po.id}`)}
+                  onDelete={() => handleDelete(po.id)}
+                  onLogistics={() => openLogisticsModal(po)}
+                  onCreateCPO={() => router.push(`/purchase/grn/${po.id}`)}
+                />
+              ))
+            ) : (
+              <tr>
+                <td
+                  colSpan={6}
+                  className="text-center py-8 text-slate-500 text-xs"
+                >
+                  {searchTerm
+                    ? `No results found for "${searchTerm}" under ${activeTab.toUpperCase()} filter`
+                    : `No purchase orders found in status "${activeTab}".`}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  {/* View Modal */}
+  <ViewPurchaseOrderModal
+    viewModalOpen={viewModalOpen}
+    setViewModalOpen={setViewModalOpen}
+    loadingPO={loadingPO}
+    selectedPO={selectedPO}
+  />
+
+  {/* Logistics Modal */}
+  <LogisticsModal
+    logisticsModalOpen={logisticsModalOpen}
+    setLogisticsModalOpen={setLogisticsModalOpen}
+    selectedLogisticsPO={selectedLogisticsPO}
+    shipments={shipments}
+    setShipmentDrawerOpen={setShipmentDrawerOpen}
+    handleTrackShipment={handleTrackShipment}
+    shipmentDrawerOpen={shipmentDrawerOpen}
+    shipmentForm={shipmentForm}
+    setShipmentForm={setShipmentForm}
+    transporters={transporters}
+    saveShipment={saveShipment}
+  />
+</div>
   );
 }
