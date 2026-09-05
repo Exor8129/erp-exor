@@ -7,9 +7,41 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { message } from "antd";
 import { useRouter } from "next/navigation";
+import { Helix } from "ldrs/react";
+import "ldrs/react/Helix.css";
+
 import LogisticsModal from "./subcontents/LogisticsModal";
 import ViewPurchaseOrderModal from "./subcontents/ViewPurchaseOrderModal";
 import { Input } from "@/components/ui/input";
+
+const getStatusBadgeStyle = (status) => {
+  const normalized = status?.toLowerCase() || "";
+  switch (normalized) {
+    case "draft":
+      return "bg-slate-100 text-slate-700 border border-slate-300";
+    case "submitted":
+      return "bg-blue-100 text-blue-800 border border-blue-300";
+    case "approved":
+      return "bg-emerald-100 text-emerald-800 border border-emerald-300";
+    case "waiting_lr":
+      return "bg-amber-100 text-amber-800 border border-amber-300";
+    case "in_transit":
+      return "bg-indigo-100 text-indigo-800 border border-indigo-300";
+    case "at_destination":
+      return "bg-teal-100 text-teal-800 border border-teal-300";
+    case "grn_created":
+      return "bg-purple-100 text-purple-800 border border-purple-300";
+    case "inbound":
+      return "bg-cyan-100 text-cyan-800 border border-cyan-300";
+    case "completed":
+      return "bg-green-100 text-green-800 border border-green-300";
+    case "cancelled":
+    case "rejected":
+      return "bg-rose-100 text-rose-800 border border-rose-300";
+    default:
+      return "bg-gray-100 text-gray-700 border border-gray-300";
+  }
+};
 
 const TableRow = ({
   id,
@@ -24,97 +56,138 @@ const TableRow = ({
   onPrint,
   onLogistics,
   onCreateCPO,
-}) => (
-  <tr className="hover:bg-slate-50 transition-colors group">
-    <td className="px-4 py-4 font-bold text-slate-700">{id}</td>
-    <td className="px-4 py-4 text-slate-600">{vendor}</td>
-    <td className="px-4 py-4 text-slate-400 text-xs">{date}</td>
+  activeActionKey,
+}) => {
+  const isViewLoading = activeActionKey === `view-${poId}`;
+  const isPrintLoading = activeActionKey === `print-${poId}`;
+  const isDeleteLoading = activeActionKey === `delete-${poId}`;
+  const isLogisticsLoading = activeActionKey === `logistics-${poId}`;
+  const isGrnLoading = activeActionKey === `grn-${poId}`;
+  const isRowLocked = Boolean(activeActionKey);
 
-    <td className="px-4 py-4">
-      <span
-        className={`px-2 py-1 rounded text-[10px] font-bold text-white uppercase ${
-          status === "approved"
-            ? "bg-green-500"
-            : status === "submitted"
-              ? "bg-blue-500"
-              : status === "draft"
-                ? "bg-yellow-500"
-                : "bg-red-500"
-        }`}
-      >
-        {status}
-      </span>
-    </td>
-    <td className="px-4 py-4">
-      <button
-        onClick={onLogistics}
-        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-sky-50 text-sky-700 text-xs font-semibold hover:bg-sky-100 transition"
-      >
-        🚚{" "}
-        {logistics?.shipmentCount > 0
-          ? `${logistics.shipmentCount} Shipment${
-              logistics.shipmentCount > 1 ? "s" : ""
-            }`
-          : "Add Shipment"}
-      </button>
-    </td>
+  return (
+    <tr className="hover:bg-slate-50 transition-colors group">
+      <td className="px-4 py-4 font-bold text-slate-700">{id}</td>
+      <td className="px-4 py-4 text-slate-600">{vendor}</td>
+      <td className="px-4 py-4 text-slate-400 text-xs">{date}</td>
 
-    <td className="px-4 py-4">
-      <div className="flex items-center gap-3">
-        <button
-          title="Create Corrected Purchase Order"
-          style={{ color: "gray" }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.color = "purple";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.color = "gray";
-          }}
-          onClick={onCreateCPO}
+      <td className="px-4 py-4">
+        <span
+          className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider ${getStatusBadgeStyle(
+            status,
+          )}`}
         >
-          <div className="w-9 h-4 border border-current rounded-full flex items-center justify-center text-[8px] font-bold">
-            G R N
-          </div>
-        </button>
-        {/* VIEW */}
-        <button
-          onClick={onView}
-          className="text-slate-500 hover:text-blue-600 transition"
-          title="View"
-        >
-          <Eye size={16} />
-        </button>
+          {status?.replace(/_/g, " ")}
+        </span>
+      </td>
 
-        {/* PRINT */}
+      {/* TEMPORARILY COMMENTED OUT: Logistics Column */}
+      {/* <td className="px-4 py-4">
         <button
-          onClick={onPrint}
-          className="text-slate-500 hover:text-yellow-600 transition"
-          title="Print"
+          onClick={onLogistics}
+          disabled={isRowLocked}
+          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-sky-50 text-sky-700 text-xs font-semibold hover:bg-sky-100 transition disabled:opacity-60 disabled:pointer-events-none min-h-[30px]"
         >
-          <Printer size={16} />
+          {isLogisticsLoading ? (
+            <div className="py-0.5">
+              <Helix size="16" speed="2.5" color="#0369a1" />
+            </div>
+          ) : (
+            <>
+              🚚{" "}
+              {logistics?.shipmentCount > 0
+                ? `${logistics.shipmentCount} Shipment${
+                    logistics.shipmentCount > 1 ? "s" : ""
+                  }`
+                : "Add Shipment"}
+            </>
+          )}
         </button>
+      </td> */}
 
-        {/* EDIT */}
-        <button
-          onClick={onEdit}
-          className="text-slate-500 hover:text-green-600 transition"
-          title="Edit"
-        >
-          <Pencil size={16} />
-        </button>
+      <td className="px-4 py-4">
+        <div className="flex items-center gap-3">
+          {/* CREATE GRN / CPO */}
+          <button
+            title="Create Corrected Purchase Order / GRN"
+            disabled={isRowLocked}
+            style={{ color: isGrnLoading ? "purple" : "gray" }}
+            onMouseEnter={(e) => {
+              if (!isRowLocked) e.currentTarget.style.color = "purple";
+            }}
+            onMouseLeave={(e) => {
+              if (!isRowLocked) e.currentTarget.style.color = "gray";
+            }}
+            onClick={onCreateCPO}
+            className="disabled:opacity-40 disabled:pointer-events-none"
+          >
+            {isGrnLoading ? (
+              <div className="w-9 h-4 flex items-center justify-center">
+                <Helix size="14" speed="2.5" color="purple" />
+              </div>
+            ) : (
+              <div className="w-9 h-4 border border-current rounded-full flex items-center justify-center text-[8px] font-bold">
+                G R N
+              </div>
+            )}
+          </button>
 
-        {/* DELETE */}
-        <button
-          onClick={onDelete}
-          className="text-slate-500 hover:text-red-600 transition"
-          title="Delete"
-        >
-          <Trash2 size={16} />
-        </button>
-      </div>
-    </td>
-  </tr>
-);
+          {/* VIEW */}
+          <button
+            onClick={onView}
+            disabled={isRowLocked}
+            className="text-slate-500 hover:text-blue-600 transition disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center w-4 h-4"
+            title="View"
+          >
+            {isViewLoading ? (
+              <Helix size="14" speed="2.5" color="#2563eb" />
+            ) : (
+              <Eye size={16} />
+            )}
+          </button>
+
+          {/* PRINT */}
+          <button
+            onClick={onPrint}
+            disabled={isRowLocked}
+            className="text-slate-500 hover:text-yellow-600 transition disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center w-4 h-4"
+            title="Print"
+          >
+            {isPrintLoading ? (
+              <Helix size="14" speed="2.5" color="#ca8a04" />
+            ) : (
+              <Printer size={16} />
+            )}
+          </button>
+
+          {/* EDIT */}
+          <button
+            onClick={onEdit}
+            disabled={isRowLocked}
+            className="text-slate-500 hover:text-green-600 transition disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center w-4 h-4"
+            title="Edit"
+          >
+            <Pencil size={16} />
+          </button>
+
+          {/* DELETE */}
+          <button
+            onClick={onDelete}
+            disabled={isRowLocked}
+            className="text-slate-500 hover:text-red-600 transition disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center w-4 h-4"
+            title="Delete"
+          >
+            {isDeleteLoading ? (
+              <Helix size="14" speed="2.5" color="#dc2626" />
+            ) : (
+              <Trash2 size={16} />
+            )}
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+};
 
 export default function PurchaseOrdersTable() {
   const [purchaseOrders, setPurchaseOrders] = useState([]);
@@ -129,6 +202,7 @@ export default function PurchaseOrdersTable() {
   const [shipmentDrawerOpen, setShipmentDrawerOpen] = useState(false);
   const [transporters, setTransporters] = useState([]);
   const [shipments, setShipments] = useState([]);
+  const [activeActionKey, setActiveActionKey] = useState(null);
 
   const router = useRouter();
 
@@ -259,7 +333,6 @@ export default function PurchaseOrdersTable() {
     }
   };
 
-  // Status counts calculation
   const tabCounts = useMemo(() => {
     return {
       all: purchaseOrders.length,
@@ -286,17 +359,14 @@ export default function PurchaseOrdersTable() {
     };
   }, [purchaseOrders]);
 
-  // Combined Search and Tab Filtering
   const filteredPurchaseOrders = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
 
     return purchaseOrders.filter((po) => {
-      // Tab Filter
       const matchesTab =
         activeTab === "all" ||
         po.status?.toLowerCase() === activeTab.toLowerCase();
 
-      // Search Filter
       const poNum = po.po_number?.toString().toLowerCase() || "";
       const vendorName = po.vendor_name?.toString().toLowerCase() || "";
       const matchesSearch =
@@ -307,23 +377,29 @@ export default function PurchaseOrdersTable() {
   }, [purchaseOrders, searchTerm, activeTab]);
 
   const handleDelete = async (id) => {
+    if (activeActionKey) return;
     const confirmed = window.confirm("Delete this Purchase Order?");
-
     if (!confirmed) return;
 
-    const { error } = await supabase
-      .schema("purchase")
-      .from("purchase_orders")
-      .delete()
-      .eq("id", id);
+    try {
+      setActiveActionKey(`delete-${id}`);
+      const { error } = await supabase
+        .schema("purchase")
+        .from("purchase_orders")
+        .delete()
+        .eq("id", id);
 
-    if (error) {
-      console.log("FULL ERROR:", error);
-      alert(error?.message || "Delete failed");
-      return;
+      if (error) {
+        console.log("FULL ERROR:", error);
+        alert(error?.message || "Delete failed");
+        return;
+      }
+
+      setPurchaseOrders((prev) => prev.filter((po) => po.id !== id));
+      message.success("Purchase order deleted successfully");
+    } finally {
+      setActiveActionKey(null);
     }
-
-    setPurchaseOrders((prev) => prev.filter((po) => po.id !== id));
   };
 
   const formatItem = (item) => {
@@ -345,7 +421,9 @@ export default function PurchaseOrdersTable() {
   };
 
   const handlePrint = async (poId) => {
+    if (activeActionKey) return;
     try {
+      setActiveActionKey(`print-${poId}`);
       const { data: po, error: poError } = await supabase
         .schema("purchase")
         .from("purchase_orders")
@@ -614,11 +692,15 @@ export default function PurchaseOrdersTable() {
       doc.save(`${po.po_number}-${vendor.vendor_name || "Vendor"}.pdf`);
     } catch (error) {
       alert("Failed to generate Purchase Order PDF.");
+    } finally {
+      setActiveActionKey(null);
     }
   };
 
   const handleView = async (poId) => {
+    if (activeActionKey) return;
     try {
+      setActiveActionKey(`view-${poId}`);
       setLoadingPO(true);
 
       const { data: po, error: poError } = await supabase
@@ -665,9 +747,11 @@ export default function PurchaseOrdersTable() {
           .select("id, uom")
           .in("id", productIds);
 
-        (masterData || []).forEach((row) => {
-          itemMasterMap[row.id] = row.uom;
-        });
+        if (masterData) {
+          (masterData || []).forEach((row) => {
+            itemMasterMap[row.id] = row.uom;
+          });
+        }
       }
 
       const integratedItems = (rawItems || []).map((item) => ({
@@ -692,21 +776,20 @@ export default function PurchaseOrdersTable() {
       alert("Failed to load Purchase Order");
     } finally {
       setLoadingPO(false);
+      setActiveActionKey(null);
     }
   };
 
-  if (loading) {
-    return (
-      <div className="p-6 text-center text-slate-500">
-        Loading purchase orders...
-      </div>
-    );
-  }
-
   const openLogisticsModal = async (po) => {
-    setSelectedLogisticsPO(po);
-    await fetchShipments(po.id);
-    setLogisticsModalOpen(true);
+    if (activeActionKey) return;
+    try {
+      setActiveActionKey(`logistics-${po.id}`);
+      setSelectedLogisticsPO(po);
+      await fetchShipments(po.id);
+      setLogisticsModalOpen(true);
+    } finally {
+      setActiveActionKey(null);
+    }
   };
 
   const handleTrackShipment = async (shipment) => {
@@ -768,6 +851,7 @@ export default function PurchaseOrdersTable() {
         lr_number: "",
         dispatch_date: null,
         expected_delivery_date: null,
+        freight_amount: 0,
         shipment_status: "Pending Dispatch",
         no_of_boxes: 0,
         weight_kg: 0,
@@ -801,156 +885,169 @@ export default function PurchaseOrdersTable() {
 
   return (
     <div>
-  <div className="w-full bg-white rounded-xl shadow-sm border border-slate-100 flex flex-col overflow-hidden">
-    <section className="bg-white rounded-xl shadow-sm border border-slate-100 flex flex-col overflow-hidden w-full">
-      {/* Card Header: Title & Search Bar */}
-      <div className="p-4 border-b border-slate-100 shrink-0 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        {/* Title */}
-        <h2 className="font-bold text-slate-700 uppercase text-xs tracking-wider shrink-0">
-          Purchase Orders
-        </h2>
+      <div className="w-full bg-white rounded-xl shadow-sm border border-slate-100 flex flex-col overflow-hidden">
+        <section className="bg-white rounded-xl shadow-sm border border-slate-100 flex flex-col overflow-hidden w-full">
+          {/* Card Header: Title & Search Bar */}
+          <div className="p-4 border-b border-slate-100 shrink-0 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <h2 className="font-bold text-slate-700 uppercase text-xs tracking-wider shrink-0">
+              Purchase Orders
+            </h2>
 
-        {/* Search Bar - Full Width on Mobile, Fixed/Auto Width on Larger Screens */}
-        <div className="relative flex items-center w-full sm:w-72">
-          <Search className="absolute left-2.5 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
-          <Input
-            type="text"
-            placeholder="Search PO # or Vendor..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="h-8 pl-8 pr-7 text-xs bg-white border-slate-300 rounded-md focus-visible:ring-1 focus-visible:ring-sky-500 w-full"
-          />
-          {searchTerm && (
-            <button
-              onClick={() => setSearchTerm("")}
-              className="absolute right-2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full"
-            >
-              <X className="h-3 w-3" />
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Tabs Row - Full Width Below Header */}
-      <div className="px-4 py-2 bg-slate-50/50 border-b border-slate-100 overflow-x-auto custom-scrollbar">
-        <div className="flex items-center gap-1.5 w-max">
-          {tabs.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 flex items-center gap-1.5 whitespace-nowrap ${
-                activeTab === tab.key
-                  ? "bg-white text-slate-800 shadow-sm border border-slate-200/80 font-semibold"
-                  : "text-slate-500 hover:text-slate-800 hover:bg-slate-200/60"
-              }`}
-            >
-              <span>{tab.label}</span>
-              <span
-                className={`px-1.5 py-0.5 rounded-full text-[10px] ${
-                  activeTab === tab.key
-                    ? "bg-slate-100 text-slate-700 font-bold"
-                    : "bg-slate-200/60 text-slate-500"
-                }`}
-              >
-                {tab.count}
-              </span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Scrollable Table Container */}
-      <div
-        style={{ height: "380px", overflowY: "auto", display: "block" }}
-        className="w-full custom-scrollbar"
-      >
-        <table className="w-full text-left text-sm border-collapse table-auto">
-          {/* Table Header */}
-          <thead className="sticky top-0 z-20 bg-slate-50 shadow-[0_1px_0_0_rgba(226,232,240,1)]">
-            <tr>
-              <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">
-                PO #
-              </th>
-              <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">
-                Vendor
-              </th>
-              <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">
-                Date
-              </th>
-              <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">
-                Status
-              </th>
-              <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">
-                Logistics
-              </th>
-              <th className="px-6 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">
-                Action
-              </th>
-            </tr>
-          </thead>
-
-          {/* Table Body */}
-          <tbody className="divide-y divide-slate-100 bg-white">
-            {filteredPurchaseOrders.length > 0 ? (
-              filteredPurchaseOrders.map((po) => (
-                <TableRow
-                  key={po.id}
-                  id={po.po_number}
-                  poId={po.id}
-                  vendor={po.vendor_name}
-                  date={new Date(po.created_at).toLocaleDateString("en-IN")}
-                  status={po.status}
-                  logistics={{
-                    shipmentCount: po.shipment_count || 0,
-                  }}
-                  onView={() => handleView(po.id)}
-                  onPrint={() => handlePrint(po.id)}
-                  onEdit={() => router.push(`/purchase/editpo/${po.id}`)}
-                  onDelete={() => handleDelete(po.id)}
-                  onLogistics={() => openLogisticsModal(po)}
-                  onCreateCPO={() => router.push(`/purchase/grn/${po.id}`)}
-                />
-              ))
-            ) : (
-              <tr>
-                <td
-                  colSpan={6}
-                  className="text-center py-8 text-slate-500 text-xs"
+            {/* Search Bar */}
+            <div className="relative flex items-center w-full sm:w-72">
+              <Search className="absolute left-2.5 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+              <Input
+                type="text"
+                placeholder="Search PO # or Vendor..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="h-8 pl-8 pr-7 text-xs bg-white border-slate-300 rounded-md focus-visible:ring-1 focus-visible:ring-sky-500 w-full"
+              />
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm("")}
+                  className="absolute right-2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full"
                 >
-                  {searchTerm
-                    ? `No results found for "${searchTerm}" under ${activeTab.toUpperCase()} filter`
-                    : `No purchase orders found in status "${activeTab}".`}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Tabs Row */}
+          <div className="px-4 py-2 bg-slate-50/50 border-b border-slate-100 overflow-x-auto custom-scrollbar">
+            <div className="flex items-center gap-1.5 w-max">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.key}
+                  onClick={() => setActiveTab(tab.key)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 flex items-center gap-1.5 whitespace-nowrap ${
+                    activeTab === tab.key
+                      ? "bg-white text-slate-800 shadow-sm border border-slate-200/80 font-semibold"
+                      : "text-slate-500 hover:text-slate-800 hover:bg-slate-200/60"
+                  }`}
+                >
+                  <span>{tab.label}</span>
+                  <span
+                    className={`px-1.5 py-0.5 rounded-full text-[10px] ${
+                      activeTab === tab.key
+                        ? "bg-slate-100 text-slate-700 font-bold"
+                        : "bg-slate-200/60 text-slate-500"
+                    }`}
+                  >
+                    {tab.count}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Scrollable Table Container */}
+          <div
+            style={{ height: "380px", overflowY: "auto", display: "block" }}
+            className="w-full custom-scrollbar"
+          >
+            <table className="w-full text-left text-sm border-collapse table-auto">
+              <thead className="sticky top-0 z-20 bg-slate-50 shadow-[0_1px_0_0_rgba(226,232,240,1)]">
+                <tr>
+                  <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">
+                    PO #
+                  </th>
+                  <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">
+                    Vendor
+                  </th>
+                  <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">
+                    Date
+                  </th>
+                  <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">
+                    Status
+                  </th>
+                  {/* TEMPORARILY COMMENTED OUT: Logistics Header */}
+                  {/* <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">
+                    Logistics
+                  </th> */}
+                  <th className="px-6 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">
+                    Action
+                  </th>
+                </tr>
+              </thead>
+
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {loading ? (
+                  <tr>
+                    <td colSpan={5} className="text-center py-16">
+                      <div className="flex flex-col items-center justify-center gap-2">
+                        <Helix size="36" speed="2.5" color="#4f46e5" />
+                        <span className="text-xs text-slate-400 font-medium">
+                          Loading purchase orders...
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                ) : filteredPurchaseOrders.length > 0 ? (
+                  filteredPurchaseOrders.map((po) => (
+                    <TableRow
+                      key={po.id}
+                      id={po.po_number}
+                      poId={po.id}
+                      vendor={po.vendor_name}
+                      date={new Date(po.created_at).toLocaleDateString("en-IN")}
+                      status={po.status}
+                      logistics={{
+                        shipmentCount: po.shipment_count || 0,
+                      }}
+                      activeActionKey={activeActionKey}
+                      onView={() => handleView(po.id)}
+                      onPrint={() => handlePrint(po.id)}
+                      onEdit={() => router.push(`/purchase/editpo/${po.id}`)}
+                      onDelete={() => handleDelete(po.id)}
+                      onLogistics={() => openLogisticsModal(po)}
+                      onCreateCPO={() => {
+                        setActiveActionKey(`grn-${po.id}`);
+                        router.push(`/purchase/grn/${po.id}`);
+                      }}
+                    />
+                  ))
+                ) : (
+                  <tr>
+                    <td
+                      colSpan={5}
+                      className="text-center py-8 text-slate-500 text-xs"
+                    >
+                      {searchTerm
+                        ? `No results found for "${searchTerm}" under ${activeTab.toUpperCase()} filter`
+                        : `No purchase orders found in status "${activeTab}".`}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
       </div>
-    </section>
-  </div>
 
-  {/* View Modal */}
-  <ViewPurchaseOrderModal
-    viewModalOpen={viewModalOpen}
-    setViewModalOpen={setViewModalOpen}
-    loadingPO={loadingPO}
-    selectedPO={selectedPO}
-  />
+      {/* View Modal */}
+      <ViewPurchaseOrderModal
+        viewModalOpen={viewModalOpen}
+        setViewModalOpen={setViewModalOpen}
+        loadingPO={loadingPO}
+        selectedPO={selectedPO}
+      />
 
-  {/* Logistics Modal */}
-  <LogisticsModal
-    logisticsModalOpen={logisticsModalOpen}
-    setLogisticsModalOpen={setLogisticsModalOpen}
-    selectedLogisticsPO={selectedLogisticsPO}
-    shipments={shipments}
-    setShipmentDrawerOpen={setShipmentDrawerOpen}
-    handleTrackShipment={handleTrackShipment}
-    shipmentDrawerOpen={shipmentDrawerOpen}
-    shipmentForm={shipmentForm}
-    setShipmentForm={setShipmentForm}
-    transporters={transporters}
-    saveShipment={saveShipment}
-  />
-</div>
+      {/* Logistics Modal */}
+      <LogisticsModal
+        logisticsModalOpen={logisticsModalOpen}
+        setLogisticsModalOpen={setLogisticsModalOpen}
+        selectedLogisticsPO={selectedLogisticsPO}
+        shipments={shipments}
+        setShipmentDrawerOpen={setShipmentDrawerOpen}
+        handleTrackShipment={handleTrackShipment}
+        shipmentDrawerOpen={shipmentDrawerOpen}
+        shipmentForm={shipmentForm}
+        setShipmentForm={setShipmentForm}
+        transporters={transporters}
+        saveShipment={saveShipment}
+      />
+    </div>
   );
 }

@@ -730,7 +730,7 @@ const fetchProducts = async () => {
 
   const handleCreatePO = async () => {
     try {
-      await savePO(mode === "edit" ? "Updated" : "Created");
+      await savePO(mode === "edit" ? "Updated" : "waiting_lr");
 
       if (mode === "edit") {
         alert("Purchase Order Updated");

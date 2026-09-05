@@ -1,10 +1,11 @@
 'use client';
 
 import React, { useState } from 'react';
-import { MapPin, CheckCircle2, X, Send } from 'lucide-react';
+import { MapPin, CheckCircle2, X, Send, Calendar } from 'lucide-react';
 import { supabase } from '../../../lib/supabase'; // Adjust import path
 
 export default function UpdateLocationModal({ isOpen, onClose, po, onSuccess }) {
+  const [eventDate, setEventDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [currentLocation, setCurrentLocation] = useState('');
   const [remarks, setRemarks] = useState('');
   const [reachedCalicut, setReachedCalicut] = useState(false);
@@ -14,47 +15,77 @@ export default function UpdateLocationModal({ isOpen, onClose, po, onSuccess }) 
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!eventDate || !currentLocation) return;
+
     try {
       setSaving(true);
-      const newStatus = reachedCalicut ? 'at_destination' : 'in_transit';
 
-      // 1. Update purchase_orders master state
-      const { error: poError } = await supabase
-        .schema('purchase')
-        .from('purchase_orders')
-        .update({
-          status: newStatus,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', po.id);
+      // 1. Fetch shipment ID
+      const { data: shipment, error: fetchError } = await supabase
+        .schema("purchase")
+        .from("shipments")
+        .select("id")
+        .eq("po_id", po.id)
+        .eq("lr_number", po.lr)
+        .maybeSingle();
 
-      if (poError) throw poError;
+      if (fetchError) {
+        console.error("ERROR fetching shipment:", fetchError.message);
+        alert("Failed to find corresponding shipment.");
+        return;
+      }
 
-      // 2. Insert audit trail entry
-      const { error: historyError } = await supabase
-        .schema('purchase')
-        .from('po_status_history')
-        .insert([
-          {
-            po_id: po.id,
-            status: newStatus,
-            lr_number: po.lr,
-            remarks: reachedCalicut
-              ? `ARRIVED AT DESTINATION (Calicut). Location: ${currentLocation || 'Calicut'}. Notes: ${remarks}`
-              : `Current Location: ${currentLocation}. Notes: ${remarks}`,
-          },
-        ]);
+      if (!shipment) {
+        console.log("No shipment found");
+        alert("Shipment record not found for this PO and LR.");
+        return;
+      }
 
-      if (historyError) throw historyError;
+      const status = reachedCalicut ? 'at_destination' : (po.status || 'in_transit');
 
-      // Reset local fields
+      // 2. Prepare payload with user-selected event date
+      const payload = {
+        shipment_id: shipment.id,
+        event_time: new Date(eventDate).toISOString(),
+        status: status,
+        location: currentLocation,
+        remarks: remarks || null,
+      };
+
+      // 3. Insert into purchase.shipment_tracking_events
+      const { error: insertError } = await supabase
+        .schema("purchase")
+        .from("shipment_tracking_events")
+        .insert([payload]);
+
+      if (insertError) {
+        console.error("ERROR saving tracking event:", insertError.message);
+        alert("Failed to save tracking event.");
+        return;
+      }
+
+      // 4. Update PO master status if reached destination
+      if (reachedCalicut) {
+        await supabase
+          .schema('purchase')
+          .from('purchase_orders')
+          .update({
+            status: 'at_destination',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', po.id);
+      }
+
+      // Reset form & notify parent
       setCurrentLocation('');
       setRemarks('');
       setReachedCalicut(false);
-      onSuccess();
+      setEventDate(new Date().toISOString().split('T')[0]);
+      if (onSuccess) onSuccess();
+      onClose();
     } catch (err) {
-      console.error('Error logging location:', err);
-      alert('Failed to save update');
+      console.error("Unexpected error:", err);
+      alert("An unexpected error occurred while saving.");
     } finally {
       setSaving(false);
     }
@@ -78,6 +109,20 @@ export default function UpdateLocationModal({ isOpen, onClose, po, onSuccess }) 
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          {/* Update Date Field */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
+              <Calendar size={13} className="text-slate-500" /> Date of Update / Event *
+            </label>
+            <input
+              type="date"
+              required
+              value={eventDate}
+              onChange={(e) => setEventDate(e.target.value)}
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-800 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+          </div>
+
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
               Current City / Hub Location *
@@ -140,7 +185,7 @@ export default function UpdateLocationModal({ isOpen, onClose, po, onSuccess }) 
             <button
               type="submit"
               disabled={saving}
-              className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+              className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50 cursor-pointer"
             >
               <Send size={13} />
               {saving ? 'Saving...' : 'Save & Next'}

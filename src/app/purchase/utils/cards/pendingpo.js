@@ -36,106 +36,123 @@ export default function PendingPOCard() {
 
   return (
     <div
+      role="button"
+      tabIndex={0}
       onClick={() => router.push('/purchase/pending-po')}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          router.push('/purchase/pending-po');
+        }
+      }}
       className="
         group relative overflow-hidden
         w-full
         rounded-xl
-        border border-slate-700/50
-        bg-linear-to-br from-slate-800 via-slate-800 to-indigo-900
+        border border-white/10
+        bg-slate-900/80
+        backdrop-blur-xl
         px-4 py-3
         shadow-sm
         cursor-pointer
         transition-all duration-300
         hover:-translate-y-0.5
-        hover:shadow-lg hover:shadow-indigo-900/20
+        hover:border-indigo-500/40
+        hover:shadow-xl hover:shadow-indigo-950/50
+        ring-1 ring-white/5
       "
     >
-      {/* Background Glow */}
-      <div
+      {/* Dynamic Ambient Mesh Glow */}
+      <div 
         className="
-          absolute -right-8 -top-8
-          h-20 w-20
-          rounded-full
-          bg-indigo-500/20
-          blur-xl
-          transition-transform duration-500
-          group-hover:scale-125
-        "
+          pointer-events-none absolute -top-10 left-1/2 -translate-x-1/2 h-28 w-28 
+          rounded-full bg-indigo-500/15 blur-2xl 
+          transition-all duration-500 group-hover:bg-indigo-500/25 group-hover:scale-125
+        " 
       />
 
-      <div className="relative z-10 flex flex-col gap-1.5">
-        {/* 1. TOP: Icon + Navigation Arrow */}
-        <div className="flex w-full items-center justify-between">
-          <div
-            className="
-              flex h-7 w-7 shrink-0
-              items-center justify-center
-              rounded-md
-              border border-white/10
-              bg-white/10
-              backdrop-blur-sm
-            "
-          >
-            <ClipboardList size={15} className="text-indigo-300" />
-          </div>
+      {/* Top-Right Navigation Arrow Button */}
+      <div
+        className="
+          absolute top-3 right-3 z-20
+          flex h-6 w-6
+          items-center justify-center
+          rounded-full
+          border border-white/5
+          bg-white/5
+          text-slate-400
+          transition-all duration-300
+          group-hover:border-white/20
+          group-hover:bg-white/10
+          group-hover:text-white
+        "
+      >
+        <ArrowUpRight 
+          size={12} 
+          strokeWidth={2.2} 
+          className="transition-transform duration-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5" 
+        />
+      </div>
 
-          <div
-            className="
-              flex h-6 w-6
-              items-center justify-center
-              rounded-full
-              bg-white/5
-              text-slate-400
-              transition-all duration-300
-              group-hover:bg-white/10
-              group-hover:text-white
-            "
-          >
-            <ArrowUpRight size={13} />
-          </div>
+      <div className="relative z-10 flex flex-col items-center text-center gap-1.5">
+        {/* 1. TOP: Centered Icon */}
+        <div
+          className="
+            flex h-8 w-8 shrink-0
+            items-center justify-center
+            rounded-lg
+            border border-indigo-400/20
+            bg-indigo-500/10
+            text-indigo-400
+            shadow-inner
+            transition-colors duration-300
+            group-hover:bg-indigo-500/20
+            group-hover:text-indigo-300
+          "
+        >
+          <ClipboardList size={15} strokeWidth={2.2} />
         </div>
 
-        {/* 2. SECOND: Compact Pending Count */}
-        <div>
-          <span className="text-2xl font-extrabold leading-none tracking-tight text-white">
+        {/* 2. SECOND: Centered Metric Value */}
+        <div className="flex justify-center">
+          <span className="text-2xl font-black font-mono tracking-tight text-slate-50">
             {loading ? (
-              <span className="inline-block h-6 w-9 animate-pulse rounded bg-white/10" />
+              <span className="inline-block h-6 w-10 animate-pulse rounded-md bg-white/10" />
             ) : (
-              pendingCount
+              pendingCount.toLocaleString()
             )}
           </span>
         </div>
 
-        {/* 3. THIRD: Titles & Descriptions */}
-        <div>
-          <h3 className="text-xs font-bold text-white tracking-wide leading-tight">
+        {/* 3. THIRD: Headings */}
+        <div className="flex flex-col items-center">
+          <h3 className="text-xs font-semibold text-slate-200 tracking-tight leading-tight group-hover:text-white transition-colors">
             Pending POs
           </h3>
-          <p className="text-[10px] font-medium text-slate-400 leading-tight">
+          <p className="text-[10px] text-slate-400/90 leading-tight">
             Orders requiring action
           </p>
         </div>
 
-        {/* 4. BOTTOM: High Priority Badge */}
-        <div className="mt-0.5">
+        {/* 4. BOTTOM: Status Pill */}
+        <div className="mt-0.5 flex justify-center">
           <span
             className="
-              inline-flex items-center gap-1
+              inline-flex items-center gap-1.5
               rounded-full
-              bg-amber-400/10
+              border border-amber-500/20
+              bg-amber-500/10
               px-2 py-0.5
               text-[9px]
-              font-bold
-              uppercase
-              tracking-wider
-              text-amber-300
-              border border-amber-400/20
-              backdrop-blur-sm
+              font-semibold
+              tracking-wide
+              text-amber-300/90
             "
           >
-            <span className="h-1 w-1 rounded-full bg-amber-300 animate-pulse" />
-            <AlertTriangle size={10} className="text-amber-300" />
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-amber-500" />
+            </span>
+            <AlertTriangle size={9} className="text-amber-400 shrink-0" />
             High Priority
           </span>
         </div>
