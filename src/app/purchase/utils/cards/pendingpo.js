@@ -10,7 +10,7 @@ export default function PendingPOCard() {
   const [pendingCount, setPendingCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+useEffect(() => {
     async function fetchPendingPOCount() {
       try {
         setLoading(true);
@@ -18,11 +18,12 @@ export default function PendingPOCard() {
         const { count, error } = await supabase
           .schema('purchase')
           .from('purchase_orders')
-          .select('*', { count: 'exact', head: true })
-          .neq('status', 'completed');
+          .select('id', { count: 'exact', head: true })
+          // If status can be null, include it; otherwise, standard .neq is sufficient:
+          .or('status.neq.COMPLETED,status.is.null');
 
         if (error) throw error;
-
+        console.log("DATA:", count);
         setPendingCount(count || 0);
       } catch (err) {
         console.error('Error fetching pending PO count:', err);

@@ -3,11 +3,15 @@
 import React from "react";
 import { useRouter } from "next/navigation";
 import { Tooltip } from "antd";
-
 import { Home } from "lucide-react";
 
-export default function PoHeader({ poNumber, poDate }) {
+export default function PoHeader({ poNumber, poDate, disabled = false }) {
   const router = useRouter();
+
+  const handleNavigateHome = () => {
+    if (disabled) return;
+    router.push("/purchase");
+  };
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
@@ -15,13 +19,20 @@ export default function PoHeader({ poNumber, poDate }) {
         {/* Left Side */}
         <div>
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-lg bg-blue-100 flex items-center justify-center">
-              <Tooltip title="Purchase Dashboard">
+            <div
+              className={`w-11 h-11 rounded-lg flex items-center justify-center transition-colors ${
+                disabled ? "bg-slate-100" : "bg-blue-100"
+              }`}
+            >
+              <Tooltip title={disabled ? "Action in progress..." : "Purchase Dashboard"}>
                 <Home
                   size={22}
-                  // Add a slight scale effect too
-                  className="text-blue-600 hover:text-blue-800 hover:scale-110 cursor-pointer transition-all duration-200"
-                  onClick={() => router.push("/purchase")}
+                  onClick={handleNavigateHome}
+                  className={`transition-all duration-200 ${
+                    disabled
+                      ? "text-slate-400 cursor-not-allowed opacity-50"
+                      : "text-blue-600 hover:text-blue-800 hover:scale-110 cursor-pointer"
+                  }`}
                 />
               </Tooltip>
             </div>

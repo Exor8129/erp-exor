@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react"; // Added useMemo here
+import { useEffect, useState, useMemo } from "react";
 import PoHeader from "./utils/header";
 import PartySelection from "./utils/partyselection";
 import ProductSelection from "./utils/itemselection";
@@ -10,6 +10,10 @@ import { Switch } from "antd";
 import POFooter from "./utils/footer";
 import ShippingAddress from "./utils/shippingaddress";
 import { useRouter } from "next/navigation";
+
+// Loader import
+import { Helix } from "ldrs/react";
+import "ldrs/react/Helix.css";
 
 const createEmptyRow = () => ({
   id: `${Date.now()}-${Math.random()}`,
@@ -29,8 +33,10 @@ export default function CreatePOPage({
   poId = null, // If editing, the ID of the PO to load
 }) {
   const router = useRouter();
-  // Mounting Guard State
+
+  // Mounting Guard & Master Data Loading Guard
   const [mounted, setMounted] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
 
   // PoHeader States
   const [poNumber, setPoNumber] = useState("Loading...");
@@ -40,7 +46,6 @@ export default function CreatePOPage({
   const [suppliers, setSuppliers] = useState([]);
   const [loadingSuppliers, setLoadingSuppliers] = useState(false);
   const [selectedVendor, setSelectedVendor] = useState(null);
-  //  tracking
 
   // ProductSelection States
   const [productOptions, setProductOptions] = useState([]);
@@ -48,7 +53,6 @@ export default function CreatePOPage({
   const [activeRowId, setActiveRowId] = useState(null);
   const [items, setItems] = useState([]);
   const [tempProductModalOpen, setTempProductModalOpen] = useState(false);
-
   const [tempProductRowId, setTempProductRowId] = useState(null);
 
   const [tempProduct, setTempProduct] = useState({
@@ -65,6 +69,8 @@ export default function CreatePOPage({
   const [shippingAddresses, setShippingAddresses] = useState([]);
   const [loadingAddresses, setLoadingAddresses] = useState(false);
   const [selectedShippingAddress, setSelectedShippingAddress] = useState(null);
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Live Financial Calculations
   const liveGrandTotal = useMemo(() => {
@@ -91,7 +97,6 @@ export default function CreatePOPage({
     return items.reduce((sum, item) => sum + Number(item.qty || 0), 0);
   }, [items]);
 
-  // Lookup for Vendor Name
   const selectedVendorName = selectedVendor?.name || "No Vendor Selected";
 
   const resetForm = () => {
@@ -103,10 +108,8 @@ export default function CreatePOPage({
     setItems([initialRow]);
     setActiveRowId(initialRow.id);
 
-    // Generate new PO Number
     loadPoNumber();
 
-    // Reset date
     const today = new Date();
     const day = String(today.getDate()).padStart(2, "0");
     const month = String(today.getMonth() + 1).padStart(2, "0");
@@ -133,7 +136,7 @@ export default function CreatePOPage({
               ...data.map((row) => {
                 const parts = row.po_number.split("-");
                 return Number(parts[2]) || 0;
-              }),
+              })
             )
           : 2000;
 
@@ -144,14 +147,163 @@ export default function CreatePOPage({
     }
   };
 
-  // Fetch PO number sequence
-  useEffect(() => {
-    if (mode === "create") {
-      loadPoNumber();
-    }
-  }, [mode]);
+  const fetchSuppliers = async () => {
+    setLoadingSuppliers(true);
+    try {
+      const { data, error } = await supabase
+        .from("vendors")
+        .select(
+          `
+          id,
+          vendor_id,
+          vendor_name,
+          vendor_under,
+          city,
+          state,
+          contact_person,
+          mobile_number,
+          credit_period
+        `
+        )
+        .eq("status", "Active")
+        .in("vendor_under", ["Sundry Creditors", "Sundry Debtors"])
+        .order("vendor_name", { ascending: true });
 
-const loadPO = async () => {
+      if (error) throw error;
+
+      const formatted = (data || []).map((vendor) => ({
+        id: vendor.id,
+        name: vendor.vendor_name,
+        code: vendor.vendor_id,
+        location: [vendor.city, vendor.state].filter(Boolean).join(", "),
+        contactPerson: vendor.contact_person,
+        mobileNumber: vendor.mobile_number,
+        creditPeriod: vendor.credit_period,
+        vendorUnder: vendor.vendor_under,
+      }));
+
+      setSuppliers(formatted);
+      return formatted;
+    } catch (err) {
+      console.error("Supplier fetch error:", err);
+      return [];
+    } finally {
+      setLoadingSuppliers(false);
+    }
+  };
+
+  const fetchShippingAddresses = async () => {
+    setLoadingAddresses(true);
+    try {
+      const { data, error } = await supabase
+        .from("company_addresses")
+        .select("*")
+        .eq("is_active", true)
+        .order("address_name");
+
+      if (error) throw error;
+
+      const formatted = (data || []).map((row) => ({
+        id: row.id,
+        name: row.address_name,
+        company: row.company_name,
+        addressLine1: row.address_line1,
+        addressLine2: row.address_line2,
+        city: row.city,
+        state: row.state,
+        pincode: row.pincode,
+        gstin: row.gstin,
+      }));
+
+      setShippingAddresses(formatted);
+      return formatted;
+    } catch (err) {
+      console.error("Shipping Address Fetch Error:", err);
+      return [];
+    } finally {
+      setLoadingAddresses(false);
+    }
+  };
+
+  const fetchProducts = async () => {
+    setLoadingProducts(true);
+    try {
+      let allProducts = [];
+      let page = 0;
+      const pageSize = 1000;
+      let keepFetching = true;
+
+      const { count: totalCount, error: countError } = await supabase
+        .from("item_master")
+        .select("id", { count: "exact", head: true })
+        .eq("status", true);
+
+      if (countError) console.error("Error fetching item count:", countError);
+
+      while (keepFetching) {
+        const from = page * pageSize;
+        const to = from + pageSize - 1;
+
+        const { data, error } = await supabase
+          .from("item_master")
+          .select(
+            `
+            id,
+            item_name,
+            guid,
+            alter_id,
+            uom,
+            hsn,
+            tax,
+            item_unit_conversions(
+              from_unit,
+              to_unit,
+              factor
+            )
+          `
+          )
+          .eq("status", true)
+          .order("id", { ascending: true })
+          .range(from, to);
+
+        if (error) {
+          console.error(`Error on page ${page}:`, error);
+          break;
+        }
+
+        if (data && data.length > 0) {
+          allProducts = [...allProducts, ...data];
+          if (allProducts.length >= (totalCount || 0) || data.length === 0) {
+            keepFetching = false;
+          } else {
+            page++;
+          }
+        } else {
+          keepFetching = false;
+        }
+      }
+
+      const formatted = allProducts.map((item) => ({
+        id: item.id,
+        name: item.item_name || "",
+        code: String(item.id),
+        unit: item.uom || "Nos",
+        conversions: item.item_unit_conversions || [],
+        hsn: item.hsn || "",
+        tax: item.tax || "",
+      }));
+
+      setProductOptions(formatted);
+      return formatted;
+    } catch (err) {
+      console.error("Unexpected error fetching products:", err);
+      return [];
+    } finally {
+      setLoadingProducts(false);
+    }
+  };
+
+  const loadPO = async (currentSuppliers, currentAddresses, currentProducts) => {
     try {
       const { data: poHeader, error: headerError } = await supabase
         .schema("purchase")
@@ -172,22 +324,16 @@ const loadPO = async () => {
 
       setPoNumber(poHeader.po_number);
       setPoDate(new Date(poHeader.created_at).toLocaleDateString("en-GB"));
+      setShowPaymentRequest(Boolean(poHeader.payment_required));
 
-      setShowPaymentRequest(poHeader.payment_required);
+      const foundAddress =
+        currentAddresses.find((x) => x.id === poHeader.shipping_address_id) || null;
+      setSelectedShippingAddress(foundAddress);
 
-      setSelectedShippingAddress(
-        shippingAddresses.find((x) => x.id === poHeader.shipping_address_id) ||
-          null,
-      );
+      const foundSupplier =
+        currentSuppliers.find((x) => x.id === poHeader.supplier_id) || null;
+      setSelectedVendor(foundSupplier);
 
-      const supplier =
-        suppliers.find((x) => x.id === poHeader.supplier_id) || null;
-
-      setSelectedVendor(supplier);
-
-      // =======================================================
-      // FIXED: Map conversion fields into component row state
-      // =======================================================
       setItems(
         poItems.map((item) => ({
           id: item.id,
@@ -197,283 +343,60 @@ const loadPO = async () => {
           rate: item.rate,
           tax: item.tax,
           hsn: item.product_code,
-          
-          // These two were missing from your state payload map:
-          purchaseUom: item.unit || "", 
+          purchaseUom: item.unit || "",
           conversionFactor: Number(item.conversion_factor ?? 1),
-          
-          // Also fetch available item master unit options for drop-downs if applicable
-          conversions: productOptions.find((p) => p.id === item.product_id)?.conversions || []
-        })),
+          conversions:
+            currentProducts.find((p) => p.id === item.product_id)?.conversions || [],
+        }))
       );
     } catch (err) {
       console.error("Error hydrating PO data for edit mode:", err);
     }
   };
 
-  useEffect(() => {
-    if (
-      mode !== "edit" ||
-      !poId ||
-      suppliers.length === 0 ||
-      shippingAddresses.length === 0
-    ) {
-      return;
-    }
-
-    loadPO();
-  }, [mode, poId, suppliers, shippingAddresses]);
-
-  // Hydrate Client Data & Initial Records Safely
+  // Coordinated Initial Load
   useEffect(() => {
     setMounted(true);
 
     if (typeof window !== "undefined") {
-    document.body.style.overflow = "unset";
-  }
-
-    fetchSuppliers();
-    fetchProducts();
-    fetchShippingAddresses();
+      document.body.style.overflow = "unset";
+    }
 
     const today = new Date();
     const day = String(today.getDate()).padStart(2, "0");
     const month = String(today.getMonth() + 1).padStart(2, "0");
     const year = today.getFullYear();
-
     setPoDate(`${day}-${month}-${year}`);
 
-    if (mode === "create") {
-      const initialRow = createEmptyRow();
+    async function initializePage() {
+      setInitialLoading(true);
+      try {
+        // Fetch all master data in parallel
+        const [fetchedSuppliers, fetchedAddresses, fetchedProducts] =
+          await Promise.all([
+            fetchSuppliers(),
+            fetchShippingAddresses(),
+            fetchProducts(),
+          ]);
 
-      setItems([initialRow]);
-      setActiveRowId(initialRow.id);
-    }
-  }, [mode]);
-
-  // PartySelection Data Fetcher
-  const fetchSuppliers = async () => {
-    setLoadingSuppliers(true);
-    const { data, error } = await supabase
-      .from("vendors")
-      .select(
-        `
-        id,
-        vendor_id,
-        vendor_name,
-        vendor_under,
-        city,
-        state,
-        contact_person,
-        mobile_number,
-        credit_period
-      `,
-      )
-      .eq("status", "Active")
-      .in("vendor_under", ["Sundry Creditors", "Sundry Debtors"])
-      .order("vendor_name", { ascending: true });
-
-    if (error) {
-      console.error("Supplier fetch error:", error);
-      setLoadingSuppliers(false);
-      return;
-    }
-
-    const formatted = (data || []).map((vendor) => ({
-      id: vendor.id,
-      name: vendor.vendor_name,
-      code: vendor.vendor_id,
-      location: [vendor.city, vendor.state].filter(Boolean).join(", "),
-      contactPerson: vendor.contact_person,
-      mobileNumber: vendor.mobile_number,
-      creditPeriod: vendor.credit_period,
-      vendorUnder: vendor.vendor_under,
-    }));
-
-    setSuppliers(formatted);
-    setLoadingSuppliers(false);
-  };
-
-  // Shipping Address Data Fetcher
-
-  const fetchShippingAddresses = async () => {
-    try {
-      setLoadingAddresses(true);
-
-      const { data, error } = await supabase
-        .from("company_addresses")
-        .select("*")
-        .eq("is_active", true)
-        .order("address_name");
-
-      if (error) throw error;
-
-      const formatted = (data || []).map((row) => ({
-        id: row.id,
-
-        name: row.address_name,
-
-        company: row.company_name,
-
-        addressLine1: row.address_line1,
-
-        addressLine2: row.address_line2,
-
-        city: row.city,
-
-        state: row.state,
-
-        pincode: row.pincode,
-
-        gstin: row.gstin,
-      }));
-
-      setShippingAddresses(formatted);
-    } catch (err) {
-      console.error("Shipping Address Fetch Error:", err);
-    } finally {
-      setLoadingAddresses(false);
-    }
-  };
-
-  // ProductSelection Data Fetcher
-//   const fetchProducts = async () => {
-//     setLoadingProducts(true);
-//     const { data, error } = await supabase
-//       .from("item_master")
-//       .select(
-//         `
-//     id,
-//     item_name,
-//     guid,
-//     alter_id,
-//     uom,
-//     hsn,
-//     tax,
-
-//     item_unit_conversions(
-//         from_unit,
-//         to_unit,
-//         factor
-//     )
-// `,
-//       )
-//       .eq("status", true)
-//       .order("item_name", { ascending: true });
-
-//     if (error) {
-//       console.error("Product fetch error:", error);
-//       setLoadingProducts(false);
-//       return;
-//     }
-
-//     const formatted = (data || []).map((item) => ({
-//       id: item.id,
-//       name: item.item_name || "",
-//       code: String(item.id),
-
-//       // Base stock unit
-//       unit: item.uom || "Nos",
-
-//       // All available conversions
-//       conversions: item.item_unit_conversions || [],
-
-//       hsn: item.hsn || "",
-//       tax: item.tax || "",
-//     }));
-
-//     setProductOptions(formatted);
-//     setLoadingProducts(false);
-//   };
-
-
-const fetchProducts = async () => {
-  setLoadingProducts(true);
-
-  try {
-    let allProducts = [];
-    let page = 0;
-    const pageSize = 1000;
-    let keepFetching = true;
-
-    // 1. Get exact total count first to verify database numbers
-    const { count: totalCount, error: countError } = await supabase
-      .from("item_master")
-      .select("id", { count: "exact", head: true })
-      .eq("status", true);
-
-    if (countError) console.error("Error fetching item count:", countError);
-    else console.log(`Total active items in database: ${totalCount}`);
-
-    // 2. Fetch all pages until totalCount is reached
-    while (keepFetching) {
-      const from = page * pageSize;
-      const to = from + pageSize - 1;
-
-      const { data, error } = await supabase
-        .from("item_master")
-        .select(
-          `
-          id,
-          item_name,
-          guid,
-          alter_id,
-          uom,
-          hsn,
-          tax,
-          item_unit_conversions(
-            from_unit,
-            to_unit,
-            factor
-          )
-        `
-        )
-        .eq("status", true)
-        .order("id", { ascending: true }) // Stable sorting on primary key
-        .range(from, to);
-
-      if (error) {
-        console.error(`Error on page ${page}:`, error);
-        break;
-      }
-
-      if (data && data.length > 0) {
-        allProducts = [...allProducts, ...data];
-        console.log(`Fetched page ${page}: ${data.length} items (Total so far: ${allProducts.length})`);
-
-        // Check if we have fetched all items according to total count or empty responses
-        if (allProducts.length >= (totalCount || 0) || data.length === 0) {
-          keepFetching = false;
+        if (mode === "edit" && poId) {
+          // In edit mode, wait until PO details are retrieved and mapped
+          await loadPO(fetchedSuppliers, fetchedAddresses, fetchedProducts);
         } else {
-          page++;
+          await loadPoNumber();
+          const initialRow = createEmptyRow();
+          setItems([initialRow]);
+          setActiveRowId(initialRow.id);
         }
-      } else {
-        keepFetching = false;
+      } catch (err) {
+        console.error("Error initializing page:", err);
+      } finally {
+        setInitialLoading(false);
       }
     }
 
-    const formatted = allProducts.map((item) => ({
-      id: item.id,
-      name: item.item_name || "",
-      code: String(item.id),
-      unit: item.uom || "Nos",
-      conversions: item.item_unit_conversions || [],
-      hsn: item.hsn || "",
-      tax: item.tax || "",
-    }));
-
-    setProductOptions(formatted);
-  } catch (err) {
-    console.error("Unexpected error fetching products:", err);
-  } finally {
-    setLoadingProducts(false);
-  }
-};
-
-
-
-
-
+    initializePage();
+  }, [mode, poId]);
 
   const handleAddTemporaryProduct = () => {
     if (!tempProduct.name.trim()) return;
@@ -489,8 +412,6 @@ const fetchProducts = async () => {
       temporary: true,
     };
 
-    // FIX: Use tempProductRowId instead of the non-existent 'row.id'
-    // If no specific row is being edited, update the activeRowId or add a new item
     const targetRowId = tempProductRowId || activeRowId;
 
     if (targetRowId) {
@@ -507,7 +428,6 @@ const fetchProducts = async () => {
       addItem(product);
     }
 
-    // Reset temp form state
     setTempProduct({
       name: "",
       hsn: "",
@@ -518,34 +438,23 @@ const fetchProducts = async () => {
     setTempProductModalOpen(false);
   };
 
-  // Grid Controls
   const addItem = (initialProduct = null) => {
     const firstConversion = initialProduct?.conversions?.[0];
 
     const newRow = {
       ...createEmptyRow(),
-
       ...(initialProduct
         ? {
             productId: initialProduct.id,
             productName: initialProduct.name,
-
-            // Base stock unit
             unit: initialProduct.unit,
-
-            // Store all available conversions for this product
             conversions: initialProduct.conversions || [],
-
-            // Default purchase unit
             purchaseUom: firstConversion
               ? firstConversion.from_unit
               : initialProduct.unit,
-
-            // Default conversion factor
             conversionFactor: firstConversion
               ? Number(firstConversion.factor)
               : 1,
-
             hsn: initialProduct.hsn,
             tax: initialProduct.tax || 0,
             rate: initialProduct.basePrice || 0,
@@ -571,22 +480,11 @@ const fetchProducts = async () => {
 
   const updateItem = (id, updates) => {
     setItems((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, ...updates } : item)),
+      prev.map((item) => (item.id === id ? { ...item, ...updates } : item))
     );
   };
 
-  if (!mounted) {
-    return (
-      <div className="min-h-screen bg-slate-50 p-6 flex flex-col items-center justify-center">
-        <div className="text-slate-400 text-sm font-medium animate-pulse">
-          Initializing Procurement Grid...
-        </div>
-      </div>
-    );
-  }
-
   const savePO = async (status) => {
-    console.log("STATUS BEING SAVED:", status);
     try {
       if (!selectedVendor?.id) {
         alert("Please select supplier");
@@ -602,9 +500,6 @@ const fetchProducts = async () => {
 
       let poData;
 
-      // ==========================
-      // CREATE MODE
-      // ==========================
       if (mode === "create") {
         const { data, error } = await supabase
           .schema("purchase")
@@ -623,14 +518,8 @@ const fetchProducts = async () => {
           .single();
 
         if (error) throw error;
-
         poData = data;
-      }
-
-      // ==========================
-      // EDIT MODE
-      // ==========================
-      else {
+      } else {
         const { data, error } = await supabase
           .schema("purchase")
           .from("purchase_orders")
@@ -647,10 +536,8 @@ const fetchProducts = async () => {
           .single();
 
         if (error) throw error;
-
         poData = data;
 
-        // Delete existing lines
         const { error: deleteError } = await supabase
           .schema("purchase")
           .from("purchase_order_items")
@@ -660,32 +547,17 @@ const fetchProducts = async () => {
         if (deleteError) throw deleteError;
       }
 
-      // ==========================
-      // SAVE ITEMS
-      // ==========================
       const poItems = validItems.map((item) => ({
         po_id: mode === "edit" ? poId : poData.id,
-
         product_id: typeof item.productId === "number" ? item.productId : null,
-
         product_name: item.productName,
-
         product_code: item.hsn || null,
-
         unit: item.purchaseUom,
-
         qty: Number(item.qty || 0),
-
-        // NEW
         conversion_factor: Number(item.conversionFactor || 1),
-
-        // NEW
         stock_qty: Number(item.qty || 0) * Number(item.conversionFactor || 1),
-
         rate: Number(item.rate || 0),
-
         tax: Number(item.tax || 0),
-
         amount:
           Number(item.qty || 0) *
           Number(item.rate || 0) *
@@ -702,18 +574,17 @@ const fetchProducts = async () => {
       return poData;
     } catch (err) {
       console.error("FULL ERROR:", err);
-      console.error("MESSAGE:", err?.message);
-      console.error("DETAILS:", err?.details);
-      console.error("HINT:", err?.hint);
-      console.error("CODE:", err?.code);
-
       throw err;
     }
   };
 
   const handleSaveDraft = async () => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+
     try {
-      await savePO("draft");
+      const res = await savePO("draft");
+      if (!res) return;
 
       if (mode === "edit") {
         alert("Draft Updated");
@@ -725,12 +596,18 @@ const fetchProducts = async () => {
       resetForm();
     } catch {
       alert("Unable to save draft");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleCreatePO = async () => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+
     try {
-      await savePO(mode === "edit" ? "Updated" : "waiting_lr");
+      const res = await savePO("waiting_lr");
+      if (!res) return;
 
       if (mode === "edit") {
         alert("Purchase Order Updated");
@@ -742,6 +619,8 @@ const fetchProducts = async () => {
       resetForm();
     } catch {
       alert(mode === "edit" ? "Unable to update PO" : "Unable to create PO");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -751,9 +630,23 @@ const fetchProducts = async () => {
     }
   };
 
+  // Full page spinner state while component mounts or initial data loads
+  if (!mounted || initialLoading) {
+    return (
+      <div className="min-h-screen bg-slate-50 p-6 flex flex-col items-center justify-center gap-4">
+        <Helix size="45" speed="2.5" color="black" />
+        <div className="text-slate-500 text-sm font-medium tracking-wide">
+          {mode === "edit"
+            ? "Loading Purchase Order Details..."
+            : "Initializing Procurement Grid..."}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 p-6 font-sans text-slate-800 space-y-4">
-      <PoHeader poNumber={poNumber} poDate={poDate} />
+      <PoHeader poNumber={poNumber} poDate={poDate} disabled={isSubmitting} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <PartySelection
@@ -781,7 +674,6 @@ const fetchProducts = async () => {
         loadingProducts={loadingProducts}
         activeRowId={activeRowId}
         setActiveRowId={setActiveRowId}
-        // ADD THESE MISSING PROPS:
         tempProductModalOpen={tempProductModalOpen}
         setTempProductModalOpen={setTempProductModalOpen}
         setTempProductRowId={setTempProductRowId}
@@ -789,6 +681,7 @@ const fetchProducts = async () => {
         setTempProduct={setTempProduct}
         handleAddTemporaryProduct={handleAddTemporaryProduct}
       />
+
       <div className="flex items-center gap-3">
         <span>Payment Request Required</span>
         <Switch checked={showPaymentRequest} onChange={setShowPaymentRequest} />
@@ -814,6 +707,8 @@ const fetchProducts = async () => {
         onSubmit={handleCreatePO}
         onCancel={handleCancel}
         mode={mode}
+        disabled={isSubmitting}
+        loading={isSubmitting}
       />
     </div>
   );

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import { supabase } from "../../../lib/supabase";
-import { Eye, Pencil, Printer, Trash2, Search, X } from "lucide-react";
+import { Eye, Pencil, Printer, Trash2, Search, X, Truck } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { message } from "antd";
@@ -12,6 +12,7 @@ import "ldrs/react/Helix.css";
 
 import LogisticsModal from "./subcontents/LogisticsModal";
 import ViewPurchaseOrderModal from "./subcontents/ViewPurchaseOrderModal";
+import StatusDrawer from "./subcontents/statusDrawer";
 import { Input } from "@/components/ui/input";
 
 const getStatusBadgeStyle = (status) => {
@@ -43,6 +44,8 @@ const getStatusBadgeStyle = (status) => {
   }
 };
 
+const inboundStatuses = ["ib-label", "ib-map", "ib-sum", "ib-put"];
+
 const TableRow = ({
   id,
   poId,
@@ -50,6 +53,7 @@ const TableRow = ({
   date,
   status,
   logistics,
+  onRowClick,
   onView,
   onEdit,
   onDelete,
@@ -66,7 +70,10 @@ const TableRow = ({
   const isRowLocked = Boolean(activeActionKey);
 
   return (
-    <tr className="hover:bg-slate-50 transition-colors group">
+    <tr
+      onClick={onRowClick}
+      className="hover:bg-slate-50/80 transition-colors group cursor-pointer select-none"
+    >
       <td className="px-4 py-4 font-bold text-slate-700">{id}</td>
       <td className="px-4 py-4 text-slate-600">{vendor}</td>
       <td className="px-4 py-4 text-slate-400 text-xs">{date}</td>
@@ -74,38 +81,14 @@ const TableRow = ({
       <td className="px-4 py-4">
         <span
           className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider ${getStatusBadgeStyle(
-            status,
+            status
           )}`}
         >
           {status?.replace(/_/g, " ")}
         </span>
       </td>
 
-      {/* TEMPORARILY COMMENTED OUT: Logistics Column */}
-      {/* <td className="px-4 py-4">
-        <button
-          onClick={onLogistics}
-          disabled={isRowLocked}
-          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-sky-50 text-sky-700 text-xs font-semibold hover:bg-sky-100 transition disabled:opacity-60 disabled:pointer-events-none min-h-[30px]"
-        >
-          {isLogisticsLoading ? (
-            <div className="py-0.5">
-              <Helix size="16" speed="2.5" color="#0369a1" />
-            </div>
-          ) : (
-            <>
-              🚚{" "}
-              {logistics?.shipmentCount > 0
-                ? `${logistics.shipmentCount} Shipment${
-                    logistics.shipmentCount > 1 ? "s" : ""
-                  }`
-                : "Add Shipment"}
-            </>
-          )}
-        </button>
-      </td> */}
-
-      <td className="px-4 py-4">
+      <td className="px-4 py-4" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-3">
           {/* CREATE GRN / CPO */}
           <button
@@ -119,7 +102,7 @@ const TableRow = ({
               if (!isRowLocked) e.currentTarget.style.color = "gray";
             }}
             onClick={onCreateCPO}
-            className="disabled:opacity-40 disabled:pointer-events-none"
+            className="disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
           >
             {isGrnLoading ? (
               <div className="w-9 h-4 flex items-center justify-center">
@@ -132,11 +115,32 @@ const TableRow = ({
             )}
           </button>
 
+          {/* ATTACH LR / LOGISTICS */}
+          <button
+            onClick={onLogistics}
+            disabled={isRowLocked}
+            className="relative text-slate-500 hover:text-amber-600 transition disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center w-4 h-4 cursor-pointer"
+            title="Attach LR / Logistics"
+          >
+            {isLogisticsLoading ? (
+              <Helix size="14" speed="2.5" color="#d97706" />
+            ) : (
+              <>
+                <Truck size={16} />
+                {logistics?.shipmentCount > 0 && (
+                  <span className="absolute -top-1.5 -right-2 bg-amber-500 text-white rounded-full text-[8px] w-3.5 h-3.5 flex items-center justify-center font-bold">
+                    {logistics.shipmentCount}
+                  </span>
+                )}
+              </>
+            )}
+          </button>
+
           {/* VIEW */}
           <button
             onClick={onView}
             disabled={isRowLocked}
-            className="text-slate-500 hover:text-blue-600 transition disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center w-4 h-4"
+            className="text-slate-500 hover:text-blue-600 transition disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center w-4 h-4 cursor-pointer"
             title="View"
           >
             {isViewLoading ? (
@@ -150,7 +154,7 @@ const TableRow = ({
           <button
             onClick={onPrint}
             disabled={isRowLocked}
-            className="text-slate-500 hover:text-yellow-600 transition disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center w-4 h-4"
+            className="text-slate-500 hover:text-yellow-600 transition disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center w-4 h-4 cursor-pointer"
             title="Print"
           >
             {isPrintLoading ? (
@@ -164,7 +168,7 @@ const TableRow = ({
           <button
             onClick={onEdit}
             disabled={isRowLocked}
-            className="text-slate-500 hover:text-green-600 transition disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center w-4 h-4"
+            className="text-slate-500 hover:text-green-600 transition disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center w-4 h-4 cursor-pointer"
             title="Edit"
           >
             <Pencil size={16} />
@@ -174,7 +178,7 @@ const TableRow = ({
           <button
             onClick={onDelete}
             disabled={isRowLocked}
-            className="text-slate-500 hover:text-red-600 transition disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center w-4 h-4"
+            className="text-slate-500 hover:text-red-600 transition disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center w-4 h-4 cursor-pointer"
             title="Delete"
           >
             {isDeleteLoading ? (
@@ -203,6 +207,10 @@ export default function PurchaseOrdersTable() {
   const [transporters, setTransporters] = useState([]);
   const [shipments, setShipments] = useState([]);
   const [activeActionKey, setActiveActionKey] = useState(null);
+
+  // Status Drawer State
+  const [statusDrawerOpen, setStatusDrawerOpen] = useState(false);
+  const [statusDrawerPO, setStatusDrawerPO] = useState(null);
 
   const router = useRouter();
 
@@ -274,7 +282,7 @@ export default function PurchaseOrdersTable() {
           supplier_id,
           shipping_address_id,
           qty_only_mode
-        `,
+        `
         )
         .order("created_at", { ascending: false });
 
@@ -337,24 +345,25 @@ export default function PurchaseOrdersTable() {
     return {
       all: purchaseOrders.length,
       waiting_lr: purchaseOrders.filter(
-        (po) => po.status?.toLowerCase() === "waiting_lr",
+        (po) => po.status?.toLowerCase() === "waiting_lr"
       ).length,
       in_transit: purchaseOrders.filter(
-        (po) => po.status?.toLowerCase() === "in_transit",
+        (po) => po.status?.toLowerCase() === "in_transit"
       ).length,
       at_destination: purchaseOrders.filter(
-        (po) => po.status?.toLowerCase() === "at_destination",
+        (po) => po.status?.toLowerCase() === "at_destination"
       ).length,
       grn_created: purchaseOrders.filter(
-        (po) => po.status?.toLowerCase() === "grn_created",
+        (po) => po.status?.toLowerCase() === "grn_created"
       ).length,
-      inbound: purchaseOrders.filter(
-        (po) => po.status?.toLowerCase() === "inbound",
+      inbound: purchaseOrders.filter((po) =>
+        inboundStatuses.includes(po.status?.toLowerCase())
       ).length,
-      draft: purchaseOrders.filter((po) => po.status?.toLowerCase() === "draft")
-        .length,
+      draft: purchaseOrders.filter(
+        (po) => po.status?.toLowerCase() === "draft"
+      ).length,
       completed: purchaseOrders.filter(
-        (po) => po.status?.toLowerCase() === "completed",
+        (po) => po.status?.toLowerCase() === "completed"
       ).length,
     };
   }, [purchaseOrders]);
@@ -363,12 +372,21 @@ export default function PurchaseOrdersTable() {
     const query = searchTerm.trim().toLowerCase();
 
     return purchaseOrders.filter((po) => {
-      const matchesTab =
-        activeTab === "all" ||
-        po.status?.toLowerCase() === activeTab.toLowerCase();
+      const status = po.status?.toLowerCase() || "";
+
+      let matchesTab = false;
+
+      if (activeTab === "all") {
+        matchesTab = true;
+      } else if (activeTab === "inbound") {
+        matchesTab = inboundStatuses.includes(status);
+      } else {
+        matchesTab = status === activeTab.toLowerCase();
+      }
 
       const poNum = po.po_number?.toString().toLowerCase() || "";
       const vendorName = po.vendor_name?.toString().toLowerCase() || "";
+
       const matchesSearch =
         !query || poNum.includes(query) || vendorName.includes(query);
 
@@ -463,7 +481,7 @@ export default function PurchaseOrdersTable() {
       if (itemsError) throw itemsError;
 
       const productIds = Array.from(
-        new Set((rawItems || []).map((i) => i.product_id).filter(Boolean)),
+        new Set((rawItems || []).map((i) => i.product_id).filter(Boolean))
       );
 
       let itemMasterMap = {};
@@ -491,12 +509,12 @@ export default function PurchaseOrdersTable() {
 
       const subtotal = formattedItems.reduce(
         (sum, item) => sum + Number(item.amount || 0),
-        0,
+        0
       );
       const totalTax = formattedItems.reduce(
         (sum, item) =>
           sum + (Number(item.amount || 0) * Number(item.tax || 0)) / 100,
-        0,
+        0
       );
       const grandTotal = subtotal + totalTax;
 
@@ -634,7 +652,7 @@ export default function PurchaseOrdersTable() {
             subtotal.toFixed(2),
           ],
           ["Tax", totalTax.toFixed(2)],
-          ["Grand Total", grandTotal.toFixed(2)],
+          ["Grand Total", grandTotal.toFixed(2)]
         );
       }
 
@@ -686,7 +704,7 @@ export default function PurchaseOrdersTable() {
         "Generated from Purchase Management System",
         pageWidth / 2,
         290,
-        { align: "center" },
+        { align: "center" }
       );
 
       doc.save(`${po.po_number}-${vendor.vendor_name || "Vendor"}.pdf`);
@@ -737,7 +755,7 @@ export default function PurchaseOrdersTable() {
         .order("created_at");
 
       const productIds = Array.from(
-        new Set((rawItems || []).map((i) => i.product_id).filter(Boolean)),
+        new Set((rawItems || []).map((i) => i.product_id).filter(Boolean))
       );
 
       let itemMasterMap = {};
@@ -906,7 +924,7 @@ export default function PurchaseOrdersTable() {
               {searchTerm && (
                 <button
                   onClick={() => setSearchTerm("")}
-                  className="absolute right-2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full"
+                  className="absolute right-2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full cursor-pointer"
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -921,7 +939,7 @@ export default function PurchaseOrdersTable() {
                 <button
                   key={tab.key}
                   onClick={() => setActiveTab(tab.key)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 flex items-center gap-1.5 whitespace-nowrap ${
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                     activeTab === tab.key
                       ? "bg-white text-slate-800 shadow-sm border border-slate-200/80 font-semibold"
                       : "text-slate-500 hover:text-slate-800 hover:bg-slate-200/60"
@@ -962,10 +980,6 @@ export default function PurchaseOrdersTable() {
                   <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">
                     Status
                   </th>
-                  {/* TEMPORARILY COMMENTED OUT: Logistics Header */}
-                  {/* <th className="px-4 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">
-                    Logistics
-                  </th> */}
                   <th className="px-6 py-3 bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">
                     Action
                   </th>
@@ -997,11 +1011,18 @@ export default function PurchaseOrdersTable() {
                         shipmentCount: po.shipment_count || 0,
                       }}
                       activeActionKey={activeActionKey}
+                      onRowClick={() => {
+                        setStatusDrawerPO(po);
+                        setStatusDrawerOpen(true);
+                      }}
                       onView={() => handleView(po.id)}
                       onPrint={() => handlePrint(po.id)}
                       onEdit={() => router.push(`/purchase/editpo/${po.id}`)}
                       onDelete={() => handleDelete(po.id)}
-                      onLogistics={() => openLogisticsModal(po)}
+                      onLogistics={() => {
+                        setActiveActionKey(`logistics-${po.id}`);
+                        router.push(`/purchase/pending-po?openLrFor=${po.id}`);
+                      }}
                       onCreateCPO={() => {
                         setActiveActionKey(`grn-${po.id}`);
                         router.push(`/purchase/grn/${po.id}`);
@@ -1025,6 +1046,16 @@ export default function PurchaseOrdersTable() {
           </div>
         </section>
       </div>
+
+      {/* Status Timeline Drawer */}
+      <StatusDrawer
+        open={statusDrawerOpen}
+        onClose={() => {
+          setStatusDrawerOpen(false);
+          setStatusDrawerPO(null);
+        }}
+        po={statusDrawerPO}
+      />
 
       {/* View Modal */}
       <ViewPurchaseOrderModal

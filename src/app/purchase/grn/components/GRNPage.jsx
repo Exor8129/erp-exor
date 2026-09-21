@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Modal, Table, InputNumber, message } from "antd";
+import { Modal, Table, InputNumber, message, Button } from "antd";
 import SummaryCards from "./SummaryCards";
 import GRNItemsTable from "./GRNItemsTable";
 
@@ -148,6 +148,7 @@ export default function GRNPage({ initialItems = [] }) {
         <div className="my-3 text-xs text-slate-500">
           Analyze items pending delivery below. Values typed into the rows automatically update the metrics dashboard and log your entries into the popover transaction lines.
         </div>
+        <Button>Test Button</Button>
         <Table
           rowKey="id"
           dataSource={items}

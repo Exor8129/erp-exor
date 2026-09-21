@@ -10,10 +10,10 @@ import {
   Modal,
   Input,
   Divider,
+  message,
 } from "antd";
 import { Package, Trash2, Plus, TrendingUpDown } from "lucide-react";
 
-// import { loadTallyExcel } from "../../../lib/loadTallyExcel";
 import TrendCard from "./sub-utils/trendcard";
 
 export default function ProductSelection({
@@ -37,6 +37,11 @@ export default function ProductSelection({
     name: "",
     unit: "",
   });
+
+  // Track already selected product IDs
+  const selectedProductIds = useMemo(() => {
+    return new Set(items.map((i) => i.productId).filter(Boolean));
+  }, [items]);
 
   const handleShowSalesTrend = (record) => {
     setSelectedProduct(record);
@@ -90,14 +95,24 @@ export default function ProductSelection({
   }, [items]);
 
   const handleAddTemporaryProduct = () => {
-    if (!tempProduct.name.trim()) return;
+    const trimmedName = tempProduct.name.trim();
+    if (!trimmedName) return;
+
+    // Check duplicate temporary product against existing items
+    const duplicateExists = items.some(
+      (item) => item.productName?.toLowerCase() === trimmedName.toLowerCase()
+    );
+    if (duplicateExists) {
+      message.warning("A product with this name is already in the list.");
+      return;
+    }
 
     const finalUnit = tempProduct.unit.trim() || "Nos";
     const uniqueId = `TEMP-${Date.now()}`;
 
     const dynamicProduct = {
       id: uniqueId,
-      name: tempProduct.name.trim(),
+      name: trimmedName,
       unit: finalUnit,
       purchaseUnit: finalUnit,
       conversionFactor: 1,
@@ -173,6 +188,12 @@ export default function ProductSelection({
                     .includes(input.toLowerCase())
                 }
                 onChange={(value) => {
+                  // Guard against selecting an already-selected product
+                  if (record.productId !== value && selectedProductIds.has(value)) {
+                    message.warning("This product has already been added.");
+                    return;
+                  }
+
                   const product = productOptions.find((p) => p.id === value);
                   if (!product) return;
 
@@ -184,30 +205,32 @@ export default function ProductSelection({
                     updateItem(record.id, {
                       productId: product.id,
                       productName: product.name,
-
                       unit: product.unit,
-
                       conversions: product.conversions || [],
-
                       purchaseUom: firstConversion
                         ? firstConversion.from_unit
                         : product.unit,
-
                       conversionFactor: firstConversion
                         ? Number(firstConversion.factor)
                         : 1,
-
                       hsn: product.hsn,
                       tax: product.tax || 0,
                       rate: product.basePrice || 0,
                     });
                   }
                 }}
-                options={productOptions.map((p) => ({
-                  value: p.id,
-                  // CHANGED HERE: Directly outputs "Product Name (ID)"
-                  label: `${p.name} (${p.code})`,
-                }))}
+                options={productOptions.map((p) => {
+                  const isSelectedElsewhere =
+                    selectedProductIds.has(p.id) && record.productId !== p.id;
+
+                  return {
+                    value: p.id,
+                    label: `${p.name} (${p.code})${
+                      isSelectedElsewhere ? " — (Already added)" : ""
+                    }`,
+                    disabled: isSelectedElsewhere,
+                  };
+                })}
                 popupRender={(menu) => (
                   <>
                     {menu}
@@ -273,11 +296,9 @@ export default function ProductSelection({
       {
         title: "Unit",
         width: 150,
-
         render: (_, record) => {
           if (record.isGhost) return null;
 
-          // No conversions → just display base unit
           if (!record.conversions?.length) {
             return <div className="px-2">{record.unit}</div>;
           }
@@ -291,7 +312,6 @@ export default function ProductSelection({
                   value: c.from_unit,
                   label: c.from_unit,
                 })),
-
                 {
                   value: record.unit,
                   label: record.unit,
@@ -304,7 +324,6 @@ export default function ProductSelection({
 
                 updateItem(record.id, {
                   purchaseUom: value,
-
                   conversionFactor: selected ? Number(selected.factor) : 1,
                 });
               }}
@@ -419,6 +438,7 @@ export default function ProductSelection({
     showPricing,
     productOptions,
     loadingProducts,
+    selectedProductIds,
     addItem,
     removeItem,
     updateItem,

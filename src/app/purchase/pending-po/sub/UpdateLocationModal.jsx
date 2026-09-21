@@ -15,56 +15,86 @@ export default function UpdateLocationModal({ isOpen, onClose, po, onSuccess }) 
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!eventDate || !currentLocation) return;
+    if (!eventDate || !currentLocation.trim()) return;
 
     try {
       setSaving(true);
 
-      // 1. Fetch shipment ID
+      // 1. Fetch shipment ID AND existing transporter_id / transporter name
       const { data: shipment, error: fetchError } = await supabase
-        .schema("purchase")
-        .from("shipments")
-        .select("id")
-        .eq("po_id", po.id)
-        .eq("lr_number", po.lr)
+        .schema('purchase')
+        .from('shipments')
+        .select('id, transporter_id, transporter')
+        .eq('po_id', po.id)
+        .eq('lr_number', po.lr)
         .maybeSingle();
 
       if (fetchError) {
-        console.error("ERROR fetching shipment:", fetchError.message);
-        alert("Failed to find corresponding shipment.");
+        console.error('ERROR fetching shipment:', fetchError.message);
+        alert('Failed to find corresponding shipment.');
         return;
       }
 
       if (!shipment) {
-        console.log("No shipment found");
-        alert("Shipment record not found for this PO and LR.");
+        console.log('No shipment found');
+        alert('Shipment record not found for this PO and LR.');
         return;
+      }
+
+      // 2. Resolve transporter_id (Priority: shipment table -> po prop -> lookup by name)
+      let resolvedTransporterId =
+        shipment.transporter_id || po.transporter_id || null;
+
+      const transporterName = (shipment.transporter || po.transporter || '').trim();
+
+      if (!resolvedTransporterId && transporterName && transporterName !== 'N/A') {
+        const { data: tData } = await supabase
+          .from('transporters')
+          .select('id')
+          .ilike('transporter_name', transporterName)
+          .maybeSingle();
+
+        if (tData?.id) {
+          resolvedTransporterId = tData.id;
+        }
       }
 
       const status = reachedCalicut ? 'at_destination' : (po.status || 'in_transit');
 
-      // 2. Prepare payload with user-selected event date
+      // 3. Prepare payload with transporter_id included
       const payload = {
         shipment_id: shipment.id,
+        transporter_id: resolvedTransporterId,
         event_time: new Date(eventDate).toISOString(),
         status: status,
-        location: currentLocation,
-        remarks: remarks || null,
+        location: currentLocation.trim(),
+        remarks: remarks.trim() || null,
       };
 
-      // 3. Insert into purchase.shipment_tracking_events
-      const { error: insertError } = await supabase
-        .schema("purchase")
-        .from("shipment_tracking_events")
-        .insert([payload]);
+      // 4. Insert into purchase.shipment_tracking_events
+      const { data: insertedEvent, error: insertError } = await supabase
+        .schema('purchase')
+        .from('shipment_tracking_events')
+        .insert([payload])
+        .select()
+        .single();
 
       if (insertError) {
-        console.error("ERROR saving tracking event:", insertError.message);
-        alert("Failed to save tracking event.");
+        console.error('ERROR saving tracking event:', insertError.message);
+        alert('Failed to save tracking event.');
         return;
       }
 
-      // 4. Update PO master status if reached destination
+      // 5. Backfill shipments table if transporter_id was empty
+      if (resolvedTransporterId && !shipment.transporter_id) {
+        await supabase
+          .schema('purchase')
+          .from('shipments')
+          .update({ transporter_id: resolvedTransporterId })
+          .eq('id', shipment.id);
+      }
+
+      // 6. Update PO master status if reached destination
       if (reachedCalicut) {
         await supabase
           .schema('purchase')
@@ -76,16 +106,26 @@ export default function UpdateLocationModal({ isOpen, onClose, po, onSuccess }) 
           .eq('id', po.id);
       }
 
-      // Reset form & notify parent
+      // Reset form & notify parent with updated data
       setCurrentLocation('');
       setRemarks('');
       setReachedCalicut(false);
       setEventDate(new Date().toISOString().split('T')[0]);
-      if (onSuccess) onSuccess();
+
+      if (onSuccess) {
+        onSuccess({
+          status: status,
+          location: currentLocation.trim(),
+          remarks: remarks.trim() || null,
+          transporter_id: resolvedTransporterId,
+          event_time: payload.event_time,
+        });
+      }
+
       onClose();
     } catch (err) {
-      console.error("Unexpected error:", err);
-      alert("An unexpected error occurred while saving.");
+      console.error('Unexpected error:', err);
+      alert('An unexpected error occurred while saving.');
     } finally {
       setSaving(false);
     }
