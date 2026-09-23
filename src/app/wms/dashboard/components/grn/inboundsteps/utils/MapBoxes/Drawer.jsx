@@ -350,9 +350,7 @@ export default function PackingControlDrawer({
     message.success("Container split session completed.");
   };
 
-  const handleCheck=()=>{
-    console.log("Fetched container Items:",pendingSummaryList);
-  }
+
 
   return (
     <Drawer
@@ -439,9 +437,7 @@ export default function PackingControlDrawer({
                   },
                 ]}
               />
-              <button 
-              onClick={handleCheck}
-              >Check</button>
+            
               </div>
             ),
           },

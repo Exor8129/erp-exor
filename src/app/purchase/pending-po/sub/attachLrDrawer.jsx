@@ -357,6 +357,7 @@ export default function AttachLrDrawer({ isOpen, onClose, selectedPO, onSuccess 
       resetForm();
 
       if (onSuccess) onSuccess();
+      onClose();
     } catch (err) {
       console.error('Error saving LR details:', err);
       setErrorMsg(err.message || 'Failed to update LR details.');

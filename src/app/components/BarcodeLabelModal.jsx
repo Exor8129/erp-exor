@@ -4,32 +4,65 @@ import { jsPDF } from "jspdf";
 import JsBarcode from "jsbarcode";
 import { supabase } from "../lib/supabase";
 
+// Generates barcode image with crisp, standard 1D thermal label parameters
 const generateBarcodeImage = (container) => {
   return new Promise((resolve) => {
     const canvas = document.createElement("canvas");
-    let barcodeValue = container.barcode;
-    
-    let barcodeConfig = {
+    const barcodeValue = container.barcode;
+
+    JsBarcode(canvas, barcodeValue, {
       format: "CODE128",
-      displayValue: false,
+      displayValue: false, // Number is rendered as vector text in jsPDF for cleaner print
       height: 40,
-      width: 1.5,
-      margin: 2,
-    };
-  
-    JsBarcode(canvas, barcodeValue, barcodeConfig);
+      width: 2,
+      margin: 0,
+    });
+
     resolve(canvas.toDataURL("image/png"));
   });
 };
 
-export default function BarcodeLabelModal({ 
-  visible, 
-  onClose, 
-  grnId, 
-  labelType,  // 'master', 'split', or 'master-ind'
+// Standardized single label layout renderer for 100mm x 50mm thermal labels
+const drawLabelPage = async (pdf, container, grnNo, boxIndex = 1, totalBoxes = 1) => {
+  const barcodeImage = await generateBarcodeImage(container);
+
+  // Outer border boundary (2mm inset)
+  pdf.rect(2, 2, 96, 46);
+
+  // Header / GRN Number (Top-Left)
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(12);
+  pdf.text(grnNo || "GRN Label", 6, 8);
+
+  // Small Box Count Indicator (Top-Right Corner for quick clarification)
+  pdf.setFont("helvetica", "normal");
+  pdf.setFontSize(8);
+  pdf.setTextColor(100, 116, 139); // Slate-500 tint
+  pdf.text(`BOX: ${boxIndex}/${totalBoxes}`, 94, 8, { align: "right" });
+  pdf.setTextColor(0, 0, 0); // Reset back to default black
+
+  // Metadata
+  pdf.setFont("helvetica", "normal");
+  pdf.setFontSize(9);
+  pdf.text(`Barcode ID: ${container.barcode}`, 6, 13);
+
+  // 70mm width x 25mm height centered horizontally on a 100mm label (x = (100 - 70) / 2 = 15)
+  pdf.addImage(barcodeImage, "PNG", 15, 16, 70, 25);
+
+  // Human-readable Barcode Text centered directly below bars
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(9);
+  pdf.text(container.barcode, 50, 44, { align: "center" });
+};
+
+export default function BarcodeLabelModal({
+  visible,
+  onClose,
+  grnId,
+  labelType, // 'master', 'split', or 'master-ind'
   boxCount = 1,
   singleBarcode = null, // Used specifically for 'master-ind' workflow
-  notes
+  notes,
 }) {
   const [loading, setLoading] = useState(false);
   const [containers, setContainers] = useState([]);
@@ -97,12 +130,14 @@ export default function BarcodeLabelModal({
 
       if (fetchError) throw fetchError;
 
-      const masterContainers = (existingContainers || []).filter(c => c.barcode && c.barcode.startsWith('MST-'));
+      const masterContainers = (existingContainers || []).filter(
+        (c) => c.barcode && c.barcode.startsWith("MST-")
+      );
 
       if (masterContainers.length === 0) {
         const newContainersPayload = [];
         for (let i = 1; i <= boxCount; i++) {
-          const paddedNumber = String(i).padStart(3, '0');
+          const paddedNumber = String(i).padStart(3, "0");
           newContainersPayload.push({
             grn_id: grnId,
             barcode: `MST-${fetchedGrnNo}-${paddedNumber}`,
@@ -117,8 +152,10 @@ export default function BarcodeLabelModal({
           .select();
 
         if (insertError) throw insertError;
-        
-        const freshMaster = insertedData.filter(c => c.barcode && c.barcode.startsWith('MST-'));
+
+        const freshMaster = insertedData.filter(
+          (c) => c.barcode && c.barcode.startsWith("MST-")
+        );
         setContainers(freshMaster);
         await generatePDFPreview(freshMaster);
       } else {
@@ -149,32 +186,34 @@ export default function BarcodeLabelModal({
 
       if (error) throw error;
 
-      const splitContainers = (existingContainers || []).filter(c => {
+      const splitContainers = (existingContainers || []).filter((c) => {
         if (!c.barcode) return false;
-        const parts = c.barcode.split('-');
-        return parts[0] === 'SPT' && c.barcode.includes(fetchedGrnNo);
+        const parts = c.barcode.split("-");
+        return parts[0] === "SPT" && c.barcode.includes(fetchedGrnNo);
       });
-      
+
       let startNumber = 1;
       if (splitContainers.length > 0) {
-        const latestBarcode = Math.max(...splitContainers.map(c => {
-          const parts = c.barcode.split('-');
-          return parseInt(parts[parts.length - 1], 10);
-        }));
+        const latestBarcode = Math.max(
+          ...splitContainers.map((c) => {
+            const parts = c.barcode.split("-");
+            return parseInt(parts[parts.length - 1], 10);
+          })
+        );
         startNumber = latestBarcode + 1;
       }
 
       const newEntries = [];
       for (let i = 0; i < count; i++) {
         const currentNumber = startNumber + i;
-        const paddedNextNumber = currentNumber.toString().padStart(3, '0');
+        const paddedNextNumber = currentNumber.toString().padStart(3, "0");
         const nextBarcode = `SPT-${fetchedGrnNo}-${paddedNextNumber}`;
-        
+
         newEntries.push({
           grn_id: grnId,
           barcode: nextBarcode,
           status: "PENDING",
-          notes:notes
+          notes: notes,
         });
       }
 
@@ -205,7 +244,6 @@ export default function BarcodeLabelModal({
 
     setLoading(true);
     try {
-      // Find the specific container record matching the given barcode
       const { data, error } = await supabase
         .schema("purchase")
         .from("containers")
@@ -241,24 +279,11 @@ export default function BarcodeLabelModal({
         format: [50, 100],
       });
 
-      for (let i = 0; i < containerList.length; i++) {
-        const container = containerList[i];
+      const total = containerList.length;
+
+      for (let i = 0; i < total; i++) {
         if (i > 0) pdf.addPage([50, 100], "landscape");
-
-        const barcodeImage = await generateBarcodeImage(container);
-
-        pdf.rect(2, 2, 96, 46);
-        pdf.setFont("helvetica", "bold");
-        pdf.setFontSize(14);
-        pdf.text(fetchedGrnNo || "GRN Label", 5, 8);
-
-        pdf.setFont("helvetica", "normal");
-        pdf.setFontSize(11);
-        pdf.text(`Barcode : ${container.barcode}`, 5, 18);
-
-        pdf.addImage(barcodeImage, "PNG", 5, 24, 90, 16);
-        pdf.setFontSize(10);
-        pdf.text(container.barcode, 25, 45);
+        await drawLabelPage(pdf, containerList[i], fetchedGrnNo, i + 1, total);
       }
 
       const blob = pdf.output("blob");
@@ -278,25 +303,14 @@ export default function BarcodeLabelModal({
         format: [50, 100],
       });
 
-      for (let i = 0; i < containers.length; i++) {
-        const container = containers[i];
+      const total = containers.length;
+
+      for (let i = 0; i < total; i++) {
         if (i > 0) pdf.addPage([50, 100], "landscape");
-
-        const barcodeImage = await generateBarcodeImage(container);
-        pdf.rect(2, 2, 96, 46);
-        pdf.setFont("helvetica", "bold");
-        pdf.setFontSize(14);
-        pdf.text(fetchedGrnNo || "", 5, 8);
-
-        pdf.setFont("helvetica", "normal");
-        pdf.setFontSize(11);
-        pdf.text(`Barcode : ${container.barcode}`, 5, 18);
-        pdf.addImage(barcodeImage, "PNG", 5, 24, 90, 16);
-        pdf.setFontSize(10);
-        pdf.text(container.barcode, 25, 45);
+        await drawLabelPage(pdf, containers[i], fetchedGrnNo, i + 1, total);
       }
 
-      const containerIds = containers.map(c => c.id);
+      const containerIds = containers.map((c) => c.id);
       await supabase
         .schema("purchase")
         .from("containers")
@@ -325,7 +339,9 @@ export default function BarcodeLabelModal({
       onCancel={onClose}
       width={700}
       footer={[
-        <Button key="back" onClick={onClose}>Cancel</Button>,
+        <Button key="back" onClick={onClose}>
+          Cancel
+        </Button>,
         <Button
           key="submit"
           type="primary"
@@ -338,12 +354,22 @@ export default function BarcodeLabelModal({
       ]}
     >
       <div style={{ marginBottom: "10px" }}>
-        <span>Box Type: <strong>{caseType}</strong></span> | 
-        <span style={{ marginLeft: "15px" }}>GRN No: <strong>{fetchedGrnNo}</strong></span> | 
+        <span>
+          Box Type: <strong>{caseType}</strong>
+        </span>{" "}
+        |
+        <span style={{ marginLeft: "15px" }}>
+          GRN No: <strong>{fetchedGrnNo}</strong>
+        </span>{" "}
+        |
         {labelType === "master-ind" ? (
-          <span style={{ marginLeft: "15px" }}>Target Barcode: <strong>{singleBarcode}</strong></span>
+          <span style={{ marginLeft: "15px" }}>
+            Target Barcode: <strong>{singleBarcode}</strong>
+          </span>
         ) : (
-          <span style={{ marginLeft: "15px" }}>Boxes Count: <strong>{boxCount}</strong></span>
+          <span style={{ marginLeft: "15px" }}>
+            Boxes Count: <strong>{boxCount}</strong>
+          </span>
         )}
       </div>
 

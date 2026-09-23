@@ -769,6 +769,42 @@ const MapBoxes = forwardRef(({ grnId, grnData }, ref) => {
     );
   }
 
+const handleClick = () => {
+  if (!activeContainer) {
+    message.warning("No active container selected.");
+    return;
+  }
+
+  if (!mappedItems || mappedItems.length === 0) {
+    message.warning("No mapped items found in the table.");
+    return;
+  }
+
+  // Map over the items currently listed in the table
+  const payloads = mappedItems.map((item) => {
+    const received = Number(item.received_qty || 0);
+    const rejected = Number(item.rejected_qty || 0);
+    const netAcceptedQty = Math.max(0, received - rejected);
+
+    return {
+      item_id: item.item_id || item.product_id || null,
+      container_id: activeContainer.id,
+      container_item_id: item.container_item_id || null,
+      transaction_type: "INBOUND",
+      quantity: netAcceptedQty > 0 ? netAcceptedQty : received,
+      reference_type: "PURCHASE_ORDER", // or "GRN" depending on your schema requirement
+      reference_id: grnData?.po_id || grnId || null,
+      // batch_number: item.batch_number || null,
+      // serial_number: item.serial_number || null,
+    };
+  });
+
+  console.log("Generated Payloads from Table:", payloads);
+
+
+  message.success(`Constructed payload for ${payloads.length} item(s)`);
+};
+
   return (
   <div className="space-y-3 p-1">
     {/* HEADER ACTION BAR */}
@@ -860,6 +896,7 @@ const MapBoxes = forwardRef(({ grnId, grnData }, ref) => {
       existingSerials={existingSerials}
       checkSerialExistsInDb={checkSerialExistsInDb}
     />
+    <Button onClick={handleClick}>Check</Button>
   </div>
 );
 });

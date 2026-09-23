@@ -24,6 +24,7 @@ import {
   Clock,
   Loader2,
   PackageSearch,
+  Eye,
 } from "lucide-react";
 import { supabase } from "../../../lib/supabase";
 import InboundProcessModal from "../components/grn/InboundProcessModal";
@@ -124,7 +125,7 @@ export default function InboundManagementPage() {
   const [processingRowId, setProcessingRowId] = useState(null);
   const [printingRowId, setPrintingRowId] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
-  const [poid,setPOid]=useState(null);
+  const [poid, setPOid] = useState(null);
 
   const searchInputRef = useRef(null);
 
@@ -247,26 +248,26 @@ export default function InboundManagementPage() {
     return { total, pending, processing, completed };
   }, [grnList]);
 
-  const handleProcessInbound = async (record) => {
+  // Open modal in View mode for completed records, or Process mode for active records
+  const handleOpenInboundModal = async (record, isReadOnly = false) => {
     setProcessingRowId(record.id);
     try {
-      // const { success, error } = await updateGrnTableStatus(
-      //   record.id,
-      //   "Inbound Processing"
-      // );
-
-      // if (!success) {
-      //   message.error("Failed to update status: " + (error?.message || "Unknown error"));
-      //   return;
-      // }
+      if (isReadOnly) {
+        setSelectedGRN(record);
+        setPOid(record.po_id);
+        setModalOpen(true);
+        return;
+      }
 
       await fetchGrns();
 
       setSelectedGRN({
         ...record,
-        // status: "Inbound Processing",
       });
-      await updatePoTableStatus(record.po_id, "IB-Label");
+
+      if (record.po_id) {
+        await updatePoTableStatus(record.po_id, "IB-Label");
+      }
       setPOid(record.po_id);
       setModalOpen(true);
     } finally {
@@ -376,7 +377,6 @@ export default function InboundManagementPage() {
     setStatusFilter("all");
   };
 
-  // Explicit, wider columns to ensure horizontal overflow on all displays
   const columns = [
     {
       title: "GRN & Purchase Order",
@@ -511,34 +511,54 @@ export default function InboundManagementPage() {
       width: 160,
       fixed: "right",
       align: "center",
-      render: (_, record) => (
-        <div className="flex items-center justify-center gap-1.5 whitespace-nowrap">
-          <Tooltip title="Start gate inspection">
-            <Button
-              type="primary"
-              size="small"
-              icon={<ArrowRight className="w-3.5 h-3.5" />}
-              loading={processingRowId === record.id}
-              disabled={printingRowId === record.id}
-              onClick={() => handleProcessInbound(record)}
-              className="text-xs bg-blue-600 hover:bg-blue-500 flex items-center h-7 px-2.5 font-medium"
-            >
-              Inbound
-            </Button>
-          </Tooltip>
+      render: (_, record) => {
+        const st = (record.status || "").toLowerCase();
+        const isCompleted = st.includes("received") || st.includes("complete");
 
-          <Tooltip title="Print container barcodes">
-            <Button
-              size="small"
-              icon={<Printer className="w-3.5 h-3.5 text-slate-600" />}
-              loading={printingRowId === record.id}
-              disabled={processingRowId === record.id}
-              onClick={() => handlePrintLabels(record)}
-              className="h-7 w-7 p-0 flex items-center justify-center border-slate-200 hover:border-slate-300"
-            />
-          </Tooltip>
-        </div>
-      ),
+        return (
+          <div className="flex items-center justify-center gap-1.5 whitespace-nowrap">
+            {isCompleted ? (
+              <Tooltip title="View received GRN details (Read Only)">
+                <Button
+                  size="small"
+                  icon={<Eye className="w-3.5 h-3.5" />}
+                  loading={processingRowId === record.id}
+                  disabled={printingRowId === record.id}
+                  onClick={() => handleOpenInboundModal(record, true)}
+                  className="text-xs bg-slate-100 text-slate-700 hover:bg-slate-200 border-slate-200 flex items-center h-7 px-2.5 font-medium"
+                >
+                  View
+                </Button>
+              </Tooltip>
+            ) : (
+              <Tooltip title="Start gate inspection">
+                <Button
+                  type="primary"
+                  size="small"
+                  icon={<ArrowRight className="w-3.5 h-3.5" />}
+                  loading={processingRowId === record.id}
+                  disabled={printingRowId === record.id}
+                  onClick={() => handleOpenInboundModal(record, false)}
+                  className="text-xs bg-blue-600 hover:bg-blue-500 flex items-center h-7 px-2.5 font-medium"
+                >
+                  Inbound
+                </Button>
+              </Tooltip>
+            )}
+
+            <Tooltip title="Print container barcodes">
+              <Button
+                size="small"
+                icon={<Printer className="w-3.5 h-3.5 text-slate-600" />}
+                loading={printingRowId === record.id}
+                disabled={processingRowId === record.id}
+                onClick={() => handlePrintLabels(record)}
+                className="h-7 w-7 p-0 flex items-center justify-center border-slate-200 hover:border-slate-300"
+              />
+            </Tooltip>
+          </div>
+        );
+      },
     },
   ];
 
@@ -669,12 +689,8 @@ export default function InboundManagementPage() {
               columns={columns}
               rowKey="id"
               size="small"
-              // Keep sticky horizontal scrollbar pinned at the bottom of viewport
               sticky={{ offsetScroll: 0 }}
-              // x: 1310 forces the scrollbar to appear by exceeding normal viewport bounds
-              // scroll={{ x: 1310, y: "calc(100vh - 280px)" }}
               scroll={{ x: 1310, y: 270 }}
-
               pagination={{
                 pageSize: 15,
                 showSizeChanger: true,
@@ -716,6 +732,7 @@ export default function InboundManagementPage() {
         grn={selectedGRN}
         onPrintLabels={handlePrintLabels}
         poid={poid}
+        readOnly={(selectedGRN?.status || "").toLowerCase().includes("received") || (selectedGRN?.status || "").toLowerCase().includes("complete")}
       />
     </div>
   );

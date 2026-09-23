@@ -754,7 +754,7 @@ export default function InventoryStockDashboard() {
             }}
             size="small"
             bordered
-            scroll={{ x: 900 }}
+            scroll={{ x: 900, y: 560 }}
           />
         </Spin>
       </Card>
