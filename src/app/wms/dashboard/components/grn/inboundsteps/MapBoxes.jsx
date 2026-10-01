@@ -8,8 +8,11 @@ import React, {
   useCallback,
   useRef,
 } from "react";
-import { Button, Spin, message, Form, Badge } from "antd";
-import { UnorderedListOutlined } from "@ant-design/icons";
+import { Button, Spin, message, Form, Badge, Modal } from "antd";
+import {
+  UnorderedListOutlined,
+  ExclamationCircleOutlined,
+} from "@ant-design/icons";
 import dayjs from "dayjs";
 import { supabase } from "../../../../../lib/supabase";
 
@@ -39,7 +42,7 @@ const MapBoxes = forwardRef(({ grnId, grnData }, ref) => {
   // Modal & Drawer States
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
-  const [editingRowId, setEditingRowId] = useState(null); // FIX: Declared missing state
+  const [editingRowId, setEditingRowId] = useState(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
   // Autocomplete Suggestions & Global Quantities
@@ -48,6 +51,10 @@ const MapBoxes = forwardRef(({ grnId, grnData }, ref) => {
   const [globalMappedQtyMap, setGlobalMappedQtyMap] = useState({});
 
   const debounceTimerRef = useRef(null);
+  const lastLookupRef = useRef({
+    key: null,
+    time: 0,
+  });
 
   // Summary list calculation for items
   const pendingSummaryList = grnItems.map((item) => {
@@ -125,7 +132,6 @@ const MapBoxes = forwardRef(({ grnId, grnData }, ref) => {
             rate,
             unit
           )
-            
         `,
         )
         .eq("grn_id", activeGrnId);
@@ -135,7 +141,7 @@ const MapBoxes = forwardRef(({ grnId, grnData }, ref) => {
         setGrnItems([]);
         return;
       }
-      
+
       const productIds = rawGrnItems
         .map((row) => row.purchase_order_items?.product_id)
         .filter(Boolean);
@@ -186,87 +192,142 @@ const MapBoxes = forwardRef(({ grnId, grnData }, ref) => {
   }, [grnId, grnData]);
 
   // 2. Fetch All Containers & Saved Containers
-  const fetchSavedContainersAndTotals = useCallback(async () => {
-    const activeGrnId = grnId || grnData?.id;
-    if (!activeGrnId) return;
+const fetchSavedContainersAndTotals = useCallback(async () => {
+  const activeGrnId = grnId || grnData?.id;
 
-    try {
-      setLoadingContainers(true);
+  if (!activeGrnId) return;
 
-      const { data: totalContainersData, error: containerErr } = await supabase
-        .schema("purchase")
-        .from("containers")
-        .select("id, barcode, status, grn_id")
-        .eq("grn_id", activeGrnId);
+  try {
+    setLoadingContainers(true);
 
-      if (containerErr) throw containerErr;
-      setAllContainers(totalContainersData || []);
+    // ============================================================
+    // STEP 1: FETCH ALL CONTAINERS FOR THIS GRN
+    // ============================================================
 
-      const { data: cItems, error: cItemsErr } = await supabase
-        .schema("purchase")
-        .from("container_items")
-        .select(
-          `
+    const {
+      data: totalContainersData,
+      error: containerErr,
+    } = await supabase
+      .schema("purchase")
+      .from("containers")
+      .select("id, barcode, status, grn_id")
+      .eq("grn_id", activeGrnId);
+
+    if (containerErr) throw containerErr;
+
+    setAllContainers(totalContainersData || []);
+
+    // ============================================================
+    // STEP 2: FETCH CONTAINER ITEMS + THEIR DETAILS
+    // ============================================================
+
+    const {
+      data: cItems,
+      error: cItemsErr,
+    } = await supabase
+      .schema("purchase")
+      .from("container_items")
+      .select(
+        `
+        id,
+        container_id,
+        grn_item_id,
+        item_id,
+        containers!inner (
           id,
-          container_id,
-          grn_item_id,
-          accepted_qty,
-          rejected_qty,
-          containers!inner (
-            id,
-            barcode,
-            grn_id
-          )
-        `,
+          barcode,
+          grn_id
+        ),
+        container_item_details (
+          id,
+          qty
         )
-        .eq("containers.grn_id", activeGrnId);
+      `,
+      )
+      .eq("containers.grn_id", activeGrnId);
 
-      if (cItemsErr) throw cItemsErr;
+    if (cItemsErr) throw cItemsErr;
 
-      const savedContainerMap = {};
-      const totalsByGrnItem = {};
+    // ============================================================
+    // STEP 3: BUILD SAVED CONTAINER MAP
+    // ============================================================
 
-      (cItems || []).forEach((row) => {
-        if (row.containers) {
-          savedContainerMap[row.containers.id] = row.containers;
-        }
+    const savedContainerMap = {};
 
-        const grnItemId = row.grn_item_id;
-        const totalQty =
-          Number(row.accepted_qty || 0) + Number(row.rejected_qty || 0);
-        totalsByGrnItem[grnItemId] =
-          (totalsByGrnItem[grnItemId] || 0) + totalQty;
-      });
+    // ============================================================
+    // STEP 4: BUILD TOTAL MAPPED QTY BY GRN ITEM
+    // ============================================================
 
-      setSavedContainers(Object.values(savedContainerMap));
-      setGlobalMappedQtyMap(totalsByGrnItem);
-    } catch (err) {
-      console.error("Error fetching containers:", err);
-    } finally {
-      setLoadingContainers(false);
-    }
-  }, [grnId, grnData]);
+    const totalsByGrnItem = {};
+
+    (cItems || []).forEach((row) => {
+      // ----------------------------------------------------------
+      // Save container information
+      // ----------------------------------------------------------
+
+      if (row.containers) {
+        savedContainerMap[row.containers.id] =
+          row.containers;
+      }
+
+      // ----------------------------------------------------------
+      // Calculate quantity from container_item_details.qty
+      // ----------------------------------------------------------
+
+      const grnItemId = row.grn_item_id;
+
+      const totalQty = (
+        row.container_item_details || []
+      ).reduce(
+        (sum, detail) =>
+          sum + Number(detail.qty || 0),
+        0
+      );
+
+      totalsByGrnItem[grnItemId] =
+        (totalsByGrnItem[grnItemId] || 0) +
+        totalQty;
+    });
+
+    // ============================================================
+    // STEP 5: UPDATE STATE
+    // ============================================================
+
+    setSavedContainers(
+      Object.values(savedContainerMap)
+    );
+
+    setGlobalMappedQtyMap(
+      totalsByGrnItem
+    );
+  } catch (err) {
+    console.error(
+      "Error fetching containers:",
+      err
+    );
+  } finally {
+    setLoadingContainers(false);
+  }
+}, [grnId, grnData]);
 
   useEffect(() => {
     fetchGrnItems();
     fetchSavedContainersAndTotals();
   }, [fetchGrnItems, fetchSavedContainersAndTotals]);
 
-  // 3. Fetch Items assigned to Active Container
+  // 3. Fetch Items assigned to Active Container (Grouped Batch-Wise)
   const fetchContainerItems = useCallback(
-    async (containerId) => {
-      try {
-        setLoading(true);
-        const { data, error } = await supabase
-          .schema("purchase")
-          .from("container_items")
-          .select(
-            `
-          id, 
-          grn_item_id, 
-          accepted_qty, 
-          rejected_qty, 
-          reject_reason, 
+  async (containerId) => {
+    try {
+      setLoading(true);
+
+      const { data, error } = await supabase
+        .schema("purchase")
+        .from("container_items")
+        .select(
+          `
+          id,
+          grn_item_id,
           remarks,
           container_item_details (
             id,
@@ -277,56 +338,158 @@ const MapBoxes = forwardRef(({ grnId, grnData }, ref) => {
             qty
           )
         `,
-          )
-          .eq("container_id", containerId);
+        )
+        .eq("container_id", containerId);
 
-        if (error) throw error;
+      if (error) throw error;
 
-        if (data && data.length > 0) {
-          const initialMapped = data
-            .map((cItem) => {
-              const masterGrnItem = grnItems.find(
-                (g) => g.id === cItem.grn_item_id,
-              );
-              if (!masterGrnItem) return null;
-
-              const primaryDetail = cItem.container_item_details?.[0] || {};
-
-              return {
-                ...masterGrnItem, // <--- This will now spread item_id directly from masterGrnItem
-                row_key: `saved_${cItem.id}`,
-                container_item_id: cItem.id,
-                item_id: masterGrnItem.item_id, // <--- EXPLICITLY INCLUDED HERE
-                received_qty:
-                  Number(cItem.accepted_qty) + Number(cItem.rejected_qty),
-                rejected_qty: Number(cItem.rejected_qty),
-                reject_reason: cItem.reject_reason || "",
-                remarks: cItem.remarks || "",
-                serial_number: primaryDetail.serial_number || "",
-                batch_number: primaryDetail.batch_number || "",
-                expiry_date: primaryDetail.expiry_date || null,
-                mrp: primaryDetail.mrp ? Number(primaryDetail.mrp) : null,
-                details_list: cItem.container_item_details || [],
-              };
-            })
-            .filter(Boolean);
-
-          setMappedItems(initialMapped);
-        } else {
-          setMappedItems([]);
-        }
-      } catch (err) {
-        console.error("Error fetching items for container:", err);
-        message.error(`Failed to load container items: ${err.message}`);
-      } finally {
-        setLoading(false);
+      if (!data || data.length === 0) {
+        setMappedItems([]);
+        return;
       }
-    },
-    [grnItems],
-  );
+
+      const batchGroupedMapped = [];
+
+      data.forEach((cItem) => {
+        const masterGrnItem = grnItems.find(
+          (g) => g.id === cItem.grn_item_id,
+        );
+
+        if (!masterGrnItem) return;
+
+        const details = cItem.container_item_details || [];
+
+        // ---------------------------------------------------------
+        // NO DETAIL RECORDS
+        // ---------------------------------------------------------
+        if (details.length === 0) {
+          batchGroupedMapped.push({
+            ...masterGrnItem,
+
+            row_key: `saved_${cItem.id}_default`,
+            container_item_id: cItem.id,
+
+            item_id: masterGrnItem.item_id,
+
+            received_qty: 0,
+            rejected_qty: 0,
+
+            remarks: cItem.remarks || "",
+
+            serial_number: "",
+            batch_number: "",
+
+            expiry_date: null,
+            mrp: masterGrnItem.unit_price || null,
+
+            details_list: [],
+            batch_detail_ids: [],
+          });
+
+          return;
+        }
+
+        // ---------------------------------------------------------
+        // GROUP DETAIL RECORDS BY BATCH
+        // ---------------------------------------------------------
+        const batches = {};
+
+        details.forEach((detail) => {
+          const batchKey =
+            detail.batch_number?.trim() || "NO_BATCH";
+
+          if (!batches[batchKey]) {
+            batches[batchKey] = {
+              batch_number: detail.batch_number || "",
+              expiry_date: detail.expiry_date || null,
+              mrp: detail.mrp != null ? Number(detail.mrp) : null,
+
+              total_qty: 0,
+
+              serials: [],
+              detail_ids: [],
+            };
+          }
+
+          // Quantity now comes ONLY from container_item_details.qty
+          batches[batchKey].total_qty += Number(detail.qty || 0);
+
+          if (detail.serial_number) {
+            batches[batchKey].serials.push(detail.serial_number);
+          }
+
+          batches[batchKey].detail_ids.push(detail.id);
+        });
+
+        // ---------------------------------------------------------
+        // CREATE ONE DISPLAY ROW PER BATCH
+        // ---------------------------------------------------------
+        Object.entries(batches).forEach(([batchKey, batchData]) => {
+          batchGroupedMapped.push({
+            ...masterGrnItem,
+
+            row_key: `saved_${cItem.id}_batch_${batchKey}`,
+
+            container_item_id: cItem.id,
+
+            item_id: masterGrnItem.item_id,
+
+            // Quantity comes from container_item_details
+            received_qty: batchData.total_qty,
+
+            rejected_qty: 0,
+
+            remarks: cItem.remarks || "",
+
+            serial_number: batchData.serials.join(", "),
+
+            batch_number: batchData.batch_number,
+
+            expiry_date: batchData.expiry_date,
+
+            mrp: batchData.mrp,
+
+            details_list: details,
+
+            batch_detail_ids: batchData.detail_ids,
+          });
+        });
+      });
+
+      setMappedItems(batchGroupedMapped);
+    } catch (err) {
+      console.error("Error fetching items for container:", err);
+
+      message.error(
+        `Failed to load container items: ${err.message}`,
+      );
+    } finally {
+      setLoading(false);
+    }
+  },
+  [grnItems],
+);
 
   const lookupBatchOrSerialDetails = async (field, value) => {
-    if (!value || !value.trim()) return;
+    const trimmedValue = value?.trim();
+
+    if (!trimmedValue) return;
+
+    const lookupKey = `${field}:${trimmedValue.toLowerCase()}`;
+    const now = Date.now();
+
+    if (
+      lastLookupRef.current.key === lookupKey &&
+      now - lastLookupRef.current.time < 800
+    ) {
+      console.log("Duplicate lookup blocked:", lookupKey);
+      return;
+    }
+
+    lastLookupRef.current = {
+      key: lookupKey,
+      time: now,
+    };
 
     try {
       const query = supabase
@@ -336,9 +499,9 @@ const MapBoxes = forwardRef(({ grnId, grnData }, ref) => {
         .not("expiry_date", "is", null);
 
       if (field === "batch") {
-        query.eq("batch_number", value.trim());
+        query.eq("batch_number", trimmedValue);
       } else if (field === "serial") {
-        query.eq("serial_number", value.trim());
+        query.eq("serial_number", trimmedValue);
       }
 
       const { data, error } = await query.limit(1).maybeSingle();
@@ -347,18 +510,20 @@ const MapBoxes = forwardRef(({ grnId, grnData }, ref) => {
 
       if (data) {
         const updates = {};
+
         if (data.expiry_date) {
           updates.expiry_date = dayjs(data.expiry_date);
         }
+
         if (data.mrp !== null && data.mrp !== undefined) {
           updates.mrp = Number(data.mrp);
         }
 
         form.setFieldsValue(updates);
 
-        if (data.expiry_date || data.mrp) {
+        if (data.expiry_date || data.mrp !== null) {
           message.info(
-            `Prefilled MRP & Expiry from DB for ${field}: "${value}"`,
+            `Prefilled MRP & Expiry from DB for ${field}: "${trimmedValue}"`,
           );
         }
       }
@@ -368,7 +533,10 @@ const MapBoxes = forwardRef(({ grnId, grnData }, ref) => {
   };
 
   const handleBatchChange = (val) => {
-    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
     debounceTimerRef.current = setTimeout(() => {
       lookupBatchOrSerialDetails("batch", val);
     }, 300);
@@ -405,21 +573,63 @@ const MapBoxes = forwardRef(({ grnId, grnData }, ref) => {
     }
   };
 
-  const handleOpenModal = (itemToEdit, existingMappedRow = null) => {
-    setEditingItem(itemToEdit);
-    setEditingRowId(existingMappedRow ? existingMappedRow.row_key : null);
+  const handleOpenModal = (itemOrRow, existingMappedRow = null) => {
+    // 1. Determine if the first parameter is an already mapped row or a raw GRN item
+    const mappedRow =
+      existingMappedRow || (itemOrRow.row_key ? itemOrRow : null);
+    const itemToEdit = mappedRow
+      ? grnItems.find((g) => g.id === mappedRow.id) || mappedRow
+      : itemOrRow;
 
-    form.setFieldsValue({
-      received_qty: existingMappedRow?.received_qty ?? 1,
-      rejected_qty: existingMappedRow?.rejected_qty ?? 0,
-      batch_number: existingMappedRow?.batch_number ?? "",
-      serial_number: existingMappedRow?.serial_number ?? "",
-      expiry_date: existingMappedRow?.expiry_date
-        ? dayjs(existingMappedRow.expiry_date)
-        : null,
-      mrp: existingMappedRow?.mrp ?? itemToEdit.unit_price ?? null,
-      reject_reason: existingMappedRow?.reject_reason ?? "",
-    });
+    setEditingItem(itemToEdit);
+    setEditingRowId(mappedRow ? mappedRow.row_key : null);
+
+    // 2. Reset form before setting new values to ensure clean state
+    form.resetFields();
+
+    // 3. Extract mapped details safely
+    if (mappedRow) {
+      const isSerialized = Boolean(
+        mappedRow.serial_number && mappedRow.serial_number !== "N/A",
+      );
+
+      form.setFieldsValue({
+        received_qty: mappedRow.received_qty ?? 1,
+        rejected_qty: mappedRow.rejected_qty ?? 0,
+        batch_number:
+          mappedRow.batch_number === "N/A"
+            ? ""
+            : (mappedRow.batch_number ?? ""),
+        serial_number: mappedRow.serial_number ?? "",
+        expiry_date: mappedRow.expiry_date
+          ? dayjs(mappedRow.expiry_date)
+          : null,
+        mrp: mappedRow.mrp ?? itemToEdit.unit_price ?? null,
+        reject_reason: mappedRow.reject_reason ?? "",
+        is_serialized: isSerialized,
+        // If passing array of serialized items into ConfigureItemModal
+        items:
+          mappedRow.details_list?.length > 0
+            ? mappedRow.details_list.map((d) => ({
+                serial_number: d.serial_number,
+                batch_number: d.batch_number,
+                mfg_date: d.expiry_date ? dayjs(d.expiry_date) : null,
+                mrp: d.mrp,
+              }))
+            : [],
+      });
+    } else {
+      // Default values for new entry
+      form.setFieldsValue({
+        received_qty: 1,
+        rejected_qty: 0,
+        batch_number: "",
+        serial_number: "",
+        expiry_date: null,
+        mrp: itemToEdit.unit_price ?? null,
+        reject_reason: "",
+      });
+    }
 
     fetchBatchAndSerialOptions();
     setIsModalOpen(true);
@@ -482,112 +692,267 @@ const MapBoxes = forwardRef(({ grnId, grnData }, ref) => {
 
   useBarcodeScanner(processScannedBarcode);
 
-  // Collect serial numbers already added in current mapped items
-  const existingSerials = mappedItems
-    .map((item) => item.serial_number)
-    .filter(Boolean);
 
-  // Database lookup for existing serial number under the same item or globally
-  const checkSerialExistsInDb = async (serialNumber) => {
-    if (!serialNumber) return false;
-
-    try {
-      const { data, error } = await supabase
-        .schema("purchase")
-        .from("container_item_details")
-        .select("id")
-        .eq("serial_number", serialNumber.trim())
-        .limit(1);
-
-      if (error) {
-        console.error("Error checking serial duplicate in DB:", error);
-        return false;
-      }
-
-      return data && data.length > 0;
-    } catch (err) {
-      console.error("Database check failed:", err);
-      return false;
+const handleModalSave = async (payload) => {
+  try {
+    if (!activeContainer?.id || !editingItem?.id) {
+      throw new Error("Please select a container and item.");
     }
-  };
 
+    const containerId = activeContainer.id;
+    const grnItemId = editingItem.id;
+    const itemId = editingItem.item_id || null;
 
-  const handleModalSave = async (payload) => {
-    console.log("Modal Save Payload:", payload);
-    try {
-      const containerId = activeContainer.id;
-      const grnItemId = editingItem.id;
-      const itemId = editingItem.item_id || null;
+    // ============================================================
+    // STEP 0: DETERMINE WHETHER THIS IS A NEW ENTRY OR AN EDIT
+    // ============================================================
 
-      const receivedQty = payload.is_serialized
-        ? payload.items.length
-        : Number(payload.received_qty || 1);
+    const isEditing = Boolean(editingRowId);
 
-      // =========================================================================
-      // STEP 1: UPSERT INTO `purchase.container_items`
-      // =========================================================================
-      const { data: existingContainerItem, error: fetchError } = await supabase
+    const existingMappedRow = isEditing
+      ? mappedItems.find((row) => row.row_key === editingRowId)
+      : null;
+
+    if (isEditing && !existingMappedRow) {
+      throw new Error(
+        "The existing entry could not be found. Please refresh and try again."
+      );
+    }
+
+    const receivedQty = payload.is_serialized
+      ? payload.items.length
+      : Number(payload.received_qty || 1);
+
+    if (!Number.isFinite(receivedQty) || receivedQty <= 0) {
+      throw new Error("Please enter a valid quantity greater than zero.");
+    }
+
+    // ============================================================
+    // STEP 1: PREPARE BATCH
+    // ============================================================
+
+    const newBatch = payload.is_serialized
+      ? null
+      : payload.batch_number?.trim() || null;
+
+    const oldBatch =
+      existingMappedRow?.batch_number?.trim() || null;
+
+    const isBatchChanged =
+      isEditing && oldBatch !== newBatch;
+
+    // ============================================================
+    // STEP 2: CHECK FOR DUPLICATE BATCH
+    // ============================================================
+
+    if (
+      !payload.is_serialized &&
+      newBatch &&
+      (!isEditing || isBatchChanged)
+    ) {
+      const { data: duplicateDetails, error: checkError } =
+        await supabase
+          .schema("purchase")
+          .from("container_item_details")
+          .select(
+            `
+            id,
+            qty,
+            container_items!inner(
+              grn_item_id,
+              container_id
+            )
+          `
+          )
+          .eq("container_id", containerId)
+          .eq("batch_number", newBatch)
+          .eq("container_items.grn_item_id", grnItemId);
+
+      if (checkError) throw checkError;
+
+      if (duplicateDetails?.length > 0) {
+        const existingQty = duplicateDetails.reduce(
+          (sum, row) => sum + Number(row.qty || 0),
+          0
+        );
+
+        const confirmed = await new Promise((resolve) => {
+          Modal.confirm({
+            title: "Duplicate Batch Detected",
+            icon: (
+              <ExclamationCircleOutlined className="text-amber-500" />
+            ),
+            content: (
+              <div className="space-y-2 pt-1 text-slate-600">
+                <p>
+                  Item{" "}
+                  <strong>"{editingItem.item_name}"</strong> with Batch
+                  Number <strong>"{newBatch}"</strong> is already available
+                  in container{" "}
+                  <strong>{activeContainer.barcode}</strong> with a quantity
+                  of <strong>{existingQty}</strong>.
+                </p>
+
+                <p className="font-medium text-slate-800">
+                  Are you sure you want to add{" "}
+                  <strong>+{receivedQty}</strong> more to this batch?
+                </p>
+              </div>
+            ),
+            okText: "Yes, Add Quantity",
+            cancelText: "Cancel Entry",
+            okButtonProps: {
+              className: "bg-blue-600",
+            },
+            onOk: () => resolve(true),
+            onCancel: () => resolve(false),
+          });
+        });
+
+        if (!confirmed) {
+          message.info("Entry canceled by user.");
+          return;
+        }
+      }
+    }
+
+    // ============================================================
+    // STEP 3: FIND OR CREATE PARENT CONTAINER ITEM
+    // ============================================================
+    //
+    // container_items no longer stores quantity.
+    // It only represents the relationship:
+    //
+    // container -> GRN item
+    //
+    // Quantity is stored in container_item_details.qty.
+    // ============================================================
+
+    const { data: existingContainerItem, error: fetchError } =
+      await supabase
         .schema("purchase")
         .from("container_items")
-        .select("id, accepted_qty")
+        .select("id")
         .eq("container_id", containerId)
         .eq("grn_item_id", grnItemId)
         .maybeSingle();
 
-      if (fetchError) throw fetchError;
+    if (fetchError) throw fetchError;
 
-      let parentContainerItemId;
+    let parentContainerItemId;
 
-      if (existingContainerItem) {
-        const updatedAcceptedQty =
-          Number(existingContainerItem.accepted_qty || 0) + receivedQty;
+    if (existingContainerItem) {
+      parentContainerItemId = existingContainerItem.id;
 
-        const { data: updatedItem, error: updateError } = await supabase
-          .schema("purchase")
-          .from("container_items")
-          .update({
-            accepted_qty: updatedAcceptedQty,
-            item_id: itemId,
-          })
-          .eq("id", existingContainerItem.id)
-          .select("id")
-          .single();
+      // Keep item_id synchronized with the parent mapping.
+      const { error: updateParentError } = await supabase
+        .schema("purchase")
+        .from("container_items")
+        .update({
+          item_id: itemId,
+        })
+        .eq("id", parentContainerItemId);
 
-        if (updateError) throw updateError;
-        parentContainerItemId = updatedItem.id;
-      } else {
-        const { data: newItem, error: insertError } = await supabase
+      if (updateParentError) throw updateParentError;
+    } else {
+      // Create parent mapping only.
+      const { data: newItem, error: insertError } =
+        await supabase
           .schema("purchase")
           .from("container_items")
           .insert({
             container_id: containerId,
             grn_item_id: grnItemId,
-            accepted_qty: receivedQty,
-            rejected_qty: 0,
             item_id: itemId,
           })
           .select("id")
           .single();
 
-        if (insertError) throw insertError;
-        parentContainerItemId = newItem.id;
+      if (insertError) throw insertError;
+
+      parentContainerItemId = newItem.id;
+    }
+
+    // ============================================================
+    // STEP 4: PREPARE EXPIRY DATE
+    // ============================================================
+
+    let formattedExpiryDate = null;
+
+    if (payload.expiry_date) {
+      formattedExpiryDate = payload.expiry_date.format
+        ? payload.expiry_date.format("YYYY-MM-DD")
+        : payload.expiry_date;
+    }
+
+    // ============================================================
+    // STEP 5: SAVE SERIALIZED ITEMS
+    // ============================================================
+
+    if (payload.is_serialized) {
+      const existingDetailIds =
+        existingMappedRow?.batch_detail_ids || [];
+
+      // ----------------------------------------------------------
+      // EDIT SERIALIZED ENTRY
+      // ----------------------------------------------------------
+
+      if (isEditing) {
+        if (existingDetailIds.length !== payload.items.length) {
+          throw new Error(
+            "The number of serial records has changed. " +
+              "Please keep the same number of serials while editing."
+          );
+        }
+
+        for (let i = 0; i < payload.items.length; i++) {
+          const item = payload.items[i];
+          const detailId = existingDetailIds[i];
+
+          const { error: detailError } = await supabase
+            .schema("purchase")
+            .from("container_item_details")
+            .update({
+              container_item_id: parentContainerItemId,
+              batch_number: item.batch_number || null,
+              serial_number: item.serial_number,
+              expiry_date: item.expiry_date || null,
+              mrp:
+                item.mrp !== undefined &&
+                item.mrp !== null &&
+                item.mrp !== ""
+                  ? Number(item.mrp)
+                  : null,
+              qty: 1,
+              item_id: itemId,
+              container_id: containerId,
+            })
+            .eq("id", detailId)
+            .eq("container_id", containerId);
+
+          if (detailError) throw detailError;
+        }
       }
 
-      // =========================================================================
-      // STEP 2: BULK INSERT INTO `purchase.container_item_details`
-      // =========================================================================
-      if (payload.is_serialized) {
-        // Map every scanned serial along with its custom Batch Number, MRP, and Date
+      // ----------------------------------------------------------
+      // NEW SERIALIZED ENTRY
+      // ----------------------------------------------------------
+
+      else {
         const detailPayloads = payload.items.map((item) => ({
           container_item_id: parentContainerItemId,
           batch_number: item.batch_number || null,
           serial_number: item.serial_number,
-          expiry_date: item.mfg_date,
-          mrp: item.mrp ? Number(item.mrp) : null,
+          expiry_date: item.expiry_date || null,
+          mrp:
+            item.mrp !== undefined &&
+            item.mrp !== null &&
+            item.mrp !== ""
+              ? Number(item.mrp)
+              : null,
           qty: 1,
           item_id: itemId,
-          container_id: activeContainer.id,
-
+          container_id: containerId,
         }));
 
         const { error: detailError } = await supabase
@@ -596,154 +961,428 @@ const MapBoxes = forwardRef(({ grnId, grnData }, ref) => {
           .insert(detailPayloads);
 
         if (detailError) throw detailError;
-      } else {
-        // Non-serialized bulk insert logic
-        let formattedExpiryDate = null;
-        if (payload.expiry_date) {
-          formattedExpiryDate = payload.expiry_date.format("YYYY-MM-DD");
+      }
+    }
+
+    // ============================================================
+    // STEP 6: SAVE BULK ITEM
+    // ============================================================
+
+    else {
+      // ----------------------------------------------------------
+      // EDIT EXISTING BULK ENTRY
+      // ----------------------------------------------------------
+
+      if (isEditing) {
+        const detailIds =
+          existingMappedRow?.batch_detail_ids || [];
+
+        if (detailIds.length === 0) {
+          throw new Error(
+            "Existing batch detail ID not found. Please refresh and try again."
+          );
         }
 
+        // Update the first detail row.
+        const primaryDetailId = detailIds[0];
+
+        const { error: detailError } = await supabase
+          .schema("purchase")
+          .from("container_item_details")
+          .update({
+            container_item_id: parentContainerItemId,
+            batch_number: newBatch,
+            serial_number: null,
+            expiry_date: formattedExpiryDate,
+            mrp:
+              payload.mrp !== undefined &&
+              payload.mrp !== null &&
+              payload.mrp !== ""
+                ? Number(payload.mrp)
+                : null,
+            qty: receivedQty,
+            item_id: itemId,
+            container_id: containerId,
+          })
+          .eq("id", primaryDetailId)
+          .eq("container_id", containerId);
+
+        if (detailError) throw detailError;
+
+        // If this batch was previously represented by
+        // multiple detail rows, remove the extra rows.
+        if (detailIds.length > 1) {
+          const extraDetailIds = detailIds.slice(1);
+
+          const { error: deleteError } = await supabase
+            .schema("purchase")
+            .from("container_item_details")
+            .delete()
+            .in("id", extraDetailIds)
+            .eq("container_id", containerId);
+
+          if (deleteError) throw deleteError;
+        }
+      }
+
+      // ----------------------------------------------------------
+      // NEW BULK ENTRY
+      // ----------------------------------------------------------
+
+      else {
         const { error: detailError } = await supabase
           .schema("purchase")
           .from("container_item_details")
           .insert({
             container_item_id: parentContainerItemId,
-            batch_number: payload.batch_number || null,
+            batch_number: newBatch,
             serial_number: null,
             expiry_date: formattedExpiryDate,
-            mrp: payload.mrp ? Number(payload.mrp) : null,
+            mrp:
+              payload.mrp !== undefined &&
+              payload.mrp !== null &&
+              payload.mrp !== ""
+                ? Number(payload.mrp)
+                : null,
             qty: receivedQty,
             item_id: itemId,
-            container_id: activeContainer.id,
-
+            container_id: containerId,
           });
 
         if (detailError) throw detailError;
       }
-
-      message.success(`${receivedQty} item(s) configured successfully!`);
-      setIsModalOpen(false);
-      form.resetFields();
-
-      await fetchContainerItems(activeContainer.id);
-      await fetchSavedContainersAndTotals();
-    } catch (err) {
-      console.error("Error saving container item details:", err);
-      message.error(err.message || "Failed to save item configuration.");
-    }
-  };
-
-  const handleSaveContainerItems = async () => {
-    if (!activeContainer) {
-      message.error("No container selected!");
-      return;
     }
 
-    if (!mappedItems || mappedItems.length === 0) {
-      message.warning("No items added to save.");
-      return;
-    }
+    // ============================================================
+    // STEP 7: SUCCESS
+    // ============================================================
 
-    try {
-      setSaving(true);
+    message.success(
+      isEditing
+        ? "Item configuration updated successfully!"
+        : `${receivedQty} item(s) configured successfully!`
+    );
 
-      // 1. Delete existing container items (Cascade automatically deletes details)
-      const { error: deleteErr } = await supabase
-        .schema("purchase")
-        .from("container_items")
-        .delete()
-        .eq("container_id", activeContainer.id);
+    setIsModalOpen(false);
+    setEditingItem(null);
+    setEditingRowId(null);
+    form.resetFields();
 
-      if (deleteErr) throw deleteErr;
+    await fetchContainerItems(containerId);
+    await fetchSavedContainersAndTotals();
+  } catch (err) {
+    console.error(
+      "Error saving container item details:",
+      err
+    );
 
-      // 2. Consolidate mapped items by grn_item_id to prevent constraint violation
-      const parentMap = new Map();
+    message.error(
+      err.message || "Failed to save item configuration."
+    );
+  }
+};
 
-      for (const item of mappedItems) {
-        const grnItemId = item.id;
-        const received = Number(item.received_qty || 0);
-        const rejected = Number(item.rejected_qty || 0);
-        const accepted = Math.max(0, received - rejected);
+const handleSaveContainerItems = async () => {
+  if (!activeContainer) {
+    message.error("No container selected!");
+    return;
+  }
 
-        if (!parentMap.has(grnItemId)) {
-          parentMap.set(grnItemId, {
-            container_id: activeContainer.id,
-            grn_item_id: grnItemId,
-            item_id: item.item_id || item.product_id || null,
-            accepted_qty: accepted,
-            rejected_qty: rejected,
-            reject_reason: item.reject_reason || null,
-            remarks: item.remarks || null,
-          });
-        } else {
-          // Aggregate quantities if the same grn_item_id appears multiple times
-          const existing = parentMap.get(grnItemId);
-          existing.accepted_qty += accepted;
-          existing.rejected_qty += rejected;
-        }
+  if (!mappedItems || mappedItems.length === 0) {
+    message.warning("No items added to save.");
+    return;
+  }
+
+  try {
+    setSaving(true);
+
+    // ============================================================
+    // STEP 1: DELETE EXISTING MAPPINGS
+    // ============================================================
+
+    const { error: deleteErr } = await supabase
+      .schema("purchase")
+      .from("container_items")
+      .delete()
+      .eq("container_id", activeContainer.id);
+
+    if (deleteErr) throw deleteErr;
+
+    // ============================================================
+    // STEP 2: CREATE ONE PARENT PER GRN ITEM
+    // ============================================================
+
+    const parentMap = new Map();
+
+    for (const item of mappedItems) {
+      const grnItemId = item.id;
+
+      if (!grnItemId) {
+        console.warn(
+          "Skipping item without GRN item ID:",
+          item
+        );
+        continue;
       }
 
-      const parentPayload = Array.from(parentMap.values());
+      if (!parentMap.has(grnItemId)) {
+        parentMap.set(grnItemId, {
+          container_id: activeContainer.id,
+          grn_item_id: grnItemId,
+          item_id:
+            item.item_id ||
+            item.product_id ||
+            null,
+          remarks: item.remarks || null,
+        });
+      }
+    }
 
-      // 3. Batch insert unique parent rows into container_items
-      const { data: insertedParents, error: parentError } = await supabase
-        .schema("purchase")
-        .from("container_items")
-        .insert(parentPayload)
-        .select("id, grn_item_id");
+    const parentPayload = Array.from(
+      parentMap.values()
+    );
 
-      if (parentError) throw parentError;
+    if (parentPayload.length === 0) {
+      throw new Error(
+        "No valid items found to save."
+      );
+    }
 
-      // Build lookup map: grn_item_id -> container_item.id
-      const parentIdMap = insertedParents.reduce((acc, parent) => {
+    // ============================================================
+    // STEP 3: INSERT PARENT CONTAINER ITEMS
+    // ============================================================
+
+    const {
+      data: insertedParents,
+      error: parentError,
+    } = await supabase
+      .schema("purchase")
+      .from("container_items")
+      .insert(parentPayload)
+      .select("id, grn_item_id");
+
+    if (parentError) throw parentError;
+
+    // ============================================================
+    // STEP 4: CREATE PARENT ID MAP
+    // ============================================================
+
+    const parentIdMap = insertedParents.reduce(
+      (acc, parent) => {
         acc[parent.grn_item_id] = parent.id;
         return acc;
-      }, {});
+      },
+      {}
+    );
 
-      // 4. Prepare detailed rows (each split/batch record goes to container_item_details)
-      const detailsPayload = mappedItems.map((item) => {
-        const received = Number(item.received_qty || 0);
-        const rejected = Number(item.rejected_qty || 0);
-        const accepted = Math.max(0, received - rejected);
+    // ============================================================
+    // STEP 5: PREPARE DETAIL ROWS
+    // ============================================================
 
-        return {
-          container_item_id: parentIdMap[item.id],
-          item_id: item.item_id || item.product_id || null,
-          batch_number: item.batch_number || null,
-          serial_number: item.serial_number || null,
-          expiry_date: item.expiry_date || null,
-          mrp: item.mrp ? Number(item.mrp) : null,
-          qty: accepted > 0 ? accepted : 1,
-        };
-      });
+    const detailsPayload = [];
 
-      // 5. Batch insert into container_item_details
-      const { error: detailError } = await supabase
+    for (const item of mappedItems) {
+      const parentId =
+        parentIdMap[item.id];
+
+      if (!parentId) {
+        console.warn(
+          "Parent container item not found for:",
+          item
+        );
+        continue;
+      }
+
+      // ----------------------------------------------------------
+      // If this mapped row contains multiple saved detail rows,
+      // preserve each individual detail.
+      // ----------------------------------------------------------
+
+      if (
+        Array.isArray(item.details_list) &&
+        item.details_list.length > 0
+      ) {
+        for (const detail of item.details_list) {
+          detailsPayload.push({
+            container_item_id: parentId,
+            item_id:
+              detail.item_id ||
+              item.item_id ||
+              item.product_id ||
+              null,
+            batch_number:
+              detail.batch_number || null,
+            serial_number:
+              detail.serial_number || null,
+            expiry_date:
+              detail.expiry_date || null,
+            mrp:
+              detail.mrp !== undefined &&
+              detail.mrp !== null &&
+              detail.mrp !== ""
+                ? Number(detail.mrp)
+                : null,
+            qty: Number(detail.qty || 0),
+            container_id: activeContainer.id,
+          });
+        }
+
+        continue;
+      }
+
+      // ----------------------------------------------------------
+      // Normal mapped row
+      // ----------------------------------------------------------
+
+      const qty = Number(
+        item.received_qty ??
+          item.packed_qty ??
+          item.quantity ??
+          0
+      );
+
+      if (qty <= 0) {
+        console.warn(
+          "Skipping item with invalid quantity:",
+          item
+        );
+        continue;
+      }
+
+      // Serialized item:
+      // serial_number may contain multiple serials separated
+      // by commas.
+      const serials = item.serial_number
+        ? item.serial_number
+            .split(",")
+            .map((serial) => serial.trim())
+            .filter(Boolean)
+        : [];
+
+      if (serials.length > 0) {
+        serials.forEach((serial) => {
+          detailsPayload.push({
+            container_item_id: parentId,
+            item_id:
+              item.item_id ||
+              item.product_id ||
+              null,
+            batch_number:
+              item.batch_number || null,
+            serial_number: serial,
+            expiry_date:
+              item.expiry_date || null,
+            mrp:
+              item.mrp !== undefined &&
+              item.mrp !== null &&
+              item.mrp !== ""
+                ? Number(item.mrp)
+                : null,
+            qty: 1,
+            container_id: activeContainer.id,
+          });
+        });
+      } else {
+        // Bulk item
+        detailsPayload.push({
+          container_item_id: parentId,
+          item_id:
+            item.item_id ||
+            item.product_id ||
+            null,
+          batch_number:
+            item.batch_number || null,
+          serial_number: null,
+          expiry_date:
+            item.expiry_date || null,
+          mrp:
+            item.mrp !== undefined &&
+            item.mrp !== null &&
+            item.mrp !== ""
+              ? Number(item.mrp)
+              : null,
+          qty,
+          container_id: activeContainer.id,
+        });
+      }
+    }
+
+    // ============================================================
+    // STEP 6: INSERT DETAIL ROWS
+    // ============================================================
+
+    if (detailsPayload.length === 0) {
+      throw new Error(
+        "No valid item details found to save."
+      );
+    }
+
+    const { error: detailError } =
+      await supabase
         .schema("purchase")
         .from("container_item_details")
         .insert(detailsPayload);
 
-      if (detailError) throw detailError;
+    if (detailError) throw detailError;
 
-      message.success(
-        `Successfully saved all items to container ${activeContainer.barcode}`,
-      );
+    // ============================================================
+    // STEP 7: SUCCESS
+    // ============================================================
 
-      await fetchContainerItems(activeContainer.id);
-      await fetchSavedContainersAndTotals();
-    } catch (err) {
-      console.error("Error saving container details:", err);
-      message.error(`Failed to save container items: ${err.message}`);
-    } finally {
-      setSaving(false);
-    }
-  };
+    message.success(
+      `Successfully saved all items to container ${activeContainer.barcode}`
+    );
 
-  // FIX: Match and remove using `row_key` instead of `id`
+    await fetchContainerItems(
+      activeContainer.id
+    );
+
+    await fetchSavedContainersAndTotals();
+  } catch (err) {
+    console.error(
+      "Error saving container details:",
+      err
+    );
+
+    message.error(
+      `Failed to save container items: ${err.message}`
+    );
+  } finally {
+    setSaving(false);
+  }
+};
+
   const handleRemoveItem = async (rowKey) => {
     const itemToRemove = mappedItems.find((m) => m.row_key === rowKey);
-    if (itemToRemove?.container_item_id) {
-      try {
+    if (!itemToRemove) return;
+
+    try {
+      // If specific batch detail records exist, delete them first
+      if (itemToRemove.batch_detail_ids?.length > 0) {
+        const { error: detailDelError } = await supabase
+          .schema("purchase")
+          .from("container_item_details")
+          .delete()
+          .in("id", itemToRemove.batch_detail_ids);
+
+        if (detailDelError) throw detailDelError;
+
+        // Check if parent container_item has any details left
+        const { data: remainingDetails } = await supabase
+          .schema("purchase")
+          .from("container_item_details")
+          .select("id")
+          .eq("container_item_id", itemToRemove.container_item_id);
+
+        // If no details remain, delete parent container_items record
+        if (!remainingDetails || remainingDetails.length === 0) {
+          await supabase
+            .schema("purchase")
+            .from("container_items")
+            .delete()
+            .eq("id", itemToRemove.container_item_id);
+        }
+      } else if (itemToRemove.container_item_id) {
         const { error } = await supabase
           .schema("purchase")
           .from("container_items")
@@ -751,14 +1390,17 @@ const MapBoxes = forwardRef(({ grnId, grnData }, ref) => {
           .eq("id", itemToRemove.container_item_id);
 
         if (error) throw error;
-        await fetchSavedContainersAndTotals();
-      } catch (err) {
-        console.error("Error removing row:", err);
-        message.error("Failed to delete record.");
-        return;
       }
+
+      message.success("Batch entry removed.");
+      await fetchSavedContainersAndTotals();
+      if (activeContainer) {
+        await fetchContainerItems(activeContainer.id);
+      }
+    } catch (err) {
+      console.error("Error removing row:", err);
+      message.error("Failed to delete batch record.");
     }
-    setMappedItems((prev) => prev.filter((item) => item.row_key !== rowKey));
   };
 
   if (loadingItems) {
@@ -769,136 +1411,97 @@ const MapBoxes = forwardRef(({ grnId, grnData }, ref) => {
     );
   }
 
-const handleClick = () => {
-  if (!activeContainer) {
-    message.warning("No active container selected.");
-    return;
-  }
-
-  if (!mappedItems || mappedItems.length === 0) {
-    message.warning("No mapped items found in the table.");
-    return;
-  }
-
-  // Map over the items currently listed in the table
-  const payloads = mappedItems.map((item) => {
-    const received = Number(item.received_qty || 0);
-    const rejected = Number(item.rejected_qty || 0);
-    const netAcceptedQty = Math.max(0, received - rejected);
-
-    return {
-      item_id: item.item_id || item.product_id || null,
-      container_id: activeContainer.id,
-      container_item_id: item.container_item_id || null,
-      transaction_type: "INBOUND",
-      quantity: netAcceptedQty > 0 ? netAcceptedQty : received,
-      reference_type: "PURCHASE_ORDER", // or "GRN" depending on your schema requirement
-      reference_id: grnData?.po_id || grnId || null,
-      // batch_number: item.batch_number || null,
-      // serial_number: item.serial_number || null,
-    };
-  });
-
-  console.log("Generated Payloads from Table:", payloads);
-
-
-  message.success(`Constructed payload for ${payloads.length} item(s)`);
-};
-
   return (
-  <div className="space-y-3 p-1">
-    {/* HEADER ACTION BAR */}
-    <div className="flex justify-between items-center bg-slate-100 p-2 rounded-lg border border-slate-200 shadow-sm">
-      <div className="text-xs text-slate-600 font-semibold uppercase tracking-wider">
-        Scan & Map Items
+    <div className="space-y-3 p-1">
+      {/* HEADER ACTION BAR */}
+      <div className="flex justify-between items-center bg-slate-100 p-2 rounded-lg border border-slate-200 shadow-sm">
+        <div className="text-xs text-slate-600 font-semibold uppercase tracking-wider">
+          Scan & Map Items
+        </div>
+        <Button
+          icon={<UnorderedListOutlined />}
+          onClick={() => setIsDrawerOpen(true)}
+          className="bg-white border-slate-300 shadow-xs hover:border-slate-400"
+        >
+          View Pending & Saved Containers{" "}
+          <Badge
+            count={unmappedContainersCount}
+            overflowCount={999}
+            style={{
+              backgroundColor:
+                unmappedContainersCount > 0 ? "#f59e0b" : "#10b981",
+            }}
+          />
+        </Button>
       </div>
-      <Button
-        icon={<UnorderedListOutlined />}
-        onClick={() => setIsDrawerOpen(true)}
-        className="bg-white border-slate-300 shadow-xs hover:border-slate-400"
-      >
-        View Pending & Saved Containers{" "}
-        <Badge
-          count={unmappedContainersCount}
-          overflowCount={999}
-          style={{
-            backgroundColor:
-              unmappedContainersCount > 0 ? "#f59e0b" : "#10b981",
+
+      {/* ACTIVE CONTAINER BANNER */}
+      <div className="rounded-lg border border-slate-200 bg-white p-2 shadow-sm">
+        <ActiveContainerBanner
+          activeContainer={activeContainer}
+          saving={saving}
+          onSave={handleSaveContainerItems}
+          onDeselect={() => {
+            setActiveContainer(null);
+            setMappedItems([]);
           }}
         />
-      </Button>
-      
-    </div>
+      </div>
 
-    {/* ACTIVE CONTAINER BANNER */}
-    <div className="rounded-lg border border-slate-200 bg-white p-2 shadow-sm">
-      <ActiveContainerBanner
+      {/* SCANNER READY INDICATOR & MANUAL SELECTOR */}
+      <div className="rounded-lg border border-slate-200 bg-white p-2 shadow-sm">
+        <ScannerControlBar
+          grnItems={grnItems}
+          selectedItemId={selectedItemId}
+          setSelectedItemId={setSelectedItemId}
+          activeContainer={activeContainer}
+          onConfigure={handleOpenModal}
+          onManualBarcodeSubmit={processScannedBarcode}
+        />
+      </div>
+
+      {/* MAPPED ITEMS TABLE */}
+      <div className="rounded-lg border border-slate-200 bg-white p-2 shadow-sm">
+        <MappedItemsTable
+          mappedItems={mappedItems}
+          loading={loading}
+          activeContainer={activeContainer}
+          onEdit={handleOpenModal}
+          onRemove={handleRemoveItem}
+        />
+      </div>
+
+      {/* DRAWER FOR PENDING & SAVED CONTAINERS */}
+      <PackingControlDrawer
+        isDrawerOpen={isDrawerOpen}
+        setIsDrawerOpen={setIsDrawerOpen}
+        totalPendingCount={totalPendingCount}
+        pendingSummaryList={pendingSummaryList}
+        savedContainers={savedContainers}
+        loadingContainers={loadingContainers}
+        fetchSavedContainersAndTotals={fetchSavedContainersAndTotals}
         activeContainer={activeContainer}
-        saving={saving}
-        onSave={handleSaveContainerItems}
-        onDeselect={() => {
-          setActiveContainer(null);
-          setMappedItems([]);
-        }}
+        setActiveContainer={setActiveContainer}
+        fetchContainerItems={fetchContainerItems}
+        poRef={grnData?.po_id || "N/A"}
+      />
+
+      {/* CONFIGURE / EDIT MODAL */}
+      <ConfigureItemModal
+        isModalOpen={isModalOpen}
+        setIsModalOpen={setIsModalOpen}
+        handleModalSave={handleModalSave}
+        form={form}
+        editingItem={editingItem}
+        batchOptions={batchOptions}
+        serialOptions={serialOptions}
+        handleBatchChange={handleBatchChange}
+        handleSerialChange={handleSerialChange}
+        lookupBatchOrSerialDetails={lookupBatchOrSerialDetails}
+        activeContainer={activeContainer}
       />
     </div>
-
-    {/* SCANNER READY INDICATOR & MANUAL SELECTOR */}
-    <div className="rounded-lg border border-slate-200 bg-white p-2 shadow-sm">
-      <ScannerControlBar
-        grnItems={grnItems}
-        selectedItemId={selectedItemId}
-        setSelectedItemId={setSelectedItemId}
-        activeContainer={activeContainer}
-        onConfigure={handleOpenModal}
-        onManualBarcodeSubmit={processScannedBarcode}
-      />
-    </div>
-
-    {/* MAPPED ITEMS TABLE */}
-    <div className="rounded-lg border border-slate-200 bg-white p-2 shadow-sm">
-      <MappedItemsTable
-        mappedItems={mappedItems}
-        loading={loading}
-        activeContainer={activeContainer}
-        onEdit={handleOpenModal}
-        onRemove={handleRemoveItem}
-      />
-    </div>
-
-    {/* DRAWER FOR PENDING & SAVED CONTAINERS */}
-    <PackingControlDrawer
-      isDrawerOpen={isDrawerOpen}
-      setIsDrawerOpen={setIsDrawerOpen}
-      totalPendingCount={totalPendingCount}
-      pendingSummaryList={pendingSummaryList}
-      savedContainers={savedContainers}
-      loadingContainers={loadingContainers}
-      fetchSavedContainersAndTotals={fetchSavedContainersAndTotals}
-      activeContainer={activeContainer}
-      setActiveContainer={setActiveContainer}
-      fetchContainerItems={fetchContainerItems}
-      poRef={grnData?.po_id || "N/A"}
-    />
-
-    {/* CONFIGURE / EDIT MODAL */}
-    <ConfigureItemModal
-      isModalOpen={isModalOpen}
-      setIsModalOpen={setIsModalOpen}
-      editingItem={editingItem}
-      form={form}
-      handleModalSave={handleModalSave}
-      batchOptions={batchOptions}
-      serialOptions={serialOptions}
-      handleBatchChange={handleBatchChange}
-      handleSerialChange={handleSerialChange}
-      lookupBatchOrSerialDetails={lookupBatchOrSerialDetails}
-      existingSerials={existingSerials}
-      checkSerialExistsInDb={checkSerialExistsInDb}
-    />
-    <Button onClick={handleClick}>Check</Button>
-  </div>
-);
+  );
 });
 
 MapBoxes.displayName = "MapBoxes";

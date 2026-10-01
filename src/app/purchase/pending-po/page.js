@@ -1,16 +1,16 @@
 // src/app/purchase/pending-po/page.jsx
 'use client';
 
-import React, { useState, useEffect, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import {
-  Home,
-  Search,
-  RefreshCw,
-  FileText,
-  Truck,
-  Calendar,
-  User,
+import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { 
+  Home, 
+  Search, 
+  RefreshCw, 
+  FileText, 
+  Truck, 
+  Calendar, 
+  User, 
   Hash,
   MapPin,
 } from 'lucide-react';
@@ -21,6 +21,7 @@ import { supabase } from '../../lib/supabase';
 import InTransitQueueModal from './sub/InTransitQueueModal';
 import AttachLrDrawer from './sub/attachLrDrawer';
 
+// Helper to format ISO/UTC strings correctly in Indian Standard Time (IST)
 function formatToIST(dateString) {
   if (!dateString) return 'N/A';
   const utcString =
@@ -39,11 +40,8 @@ function formatToIST(dateString) {
   });
 }
 
-function PendingPoContent() {
+export default function PendingPoPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const openLrForPoId = searchParams.get('openLrFor');
-
   const [loading, setLoading] = useState(true);
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -57,6 +55,7 @@ function PendingPoContent() {
   // Active click/action tracker to prevent multiple clicks
   const [activeAction, setActiveAction] = useState(null);
 
+  // Fetch pending purchase orders & their LR exclusively from purchase.shipments
   const fetchPendingPOs = async () => {
     try {
       setLoading(true);
@@ -80,6 +79,7 @@ function PendingPoContent() {
         new Set(pos.map((po) => po.supplier_id).filter(Boolean))
       );
 
+      // Fetch vendors and shipments in parallel
       const [vendorRes, shipmentRes] = await Promise.all([
         supplierIds.length > 0
           ? supabase.from('vendors').select('id, vendor_name').in('id', supplierIds)
@@ -96,11 +96,13 @@ function PendingPoContent() {
       if (vendorRes.error) throw vendorRes.error;
       if (shipmentRes.error) throw shipmentRes.error;
 
+      // Map vendors
       const vendorMap = (vendorRes.data || []).reduce((acc, v) => {
         acc[v.id] = v;
         return acc;
       }, {});
 
+      // Build map exclusively from purchase.shipments.lr_number
       const shipmentLrMap = {};
       (shipmentRes.data || []).forEach((item) => {
         const cleanLr = item.lr_number?.trim();
@@ -120,23 +122,12 @@ function PendingPoContent() {
 
         return {
           ...po,
-          lr: resolvedLr,
+          lr: resolvedLr, // Strictly sourced from purchase.shipments
           vendors: vendorMap[po.supplier_id] || null,
         };
       });
 
       setPurchaseOrders(combinedData);
-
-      // Auto-open drawer if `openLrFor` query parameter matches a fetched PO
-      if (openLrForPoId) {
-        const targetPo = combinedData.find(
-          (p) => String(p.id) === String(openLrForPoId)
-        );
-        if (targetPo) {
-          setSelectedPoForDrawer(targetPo);
-          setIsDrawerOpen(true);
-        }
-      }
     } catch (err) {
       console.error('Error fetching pending POs:', err);
     } finally {
@@ -146,7 +137,7 @@ function PendingPoContent() {
 
   useEffect(() => {
     fetchPendingPOs();
-  }, [openLrForPoId]);
+  }, []);
 
   const handleOpenDrawer = (po) => {
     if (activeAction) return;
@@ -156,15 +147,6 @@ function PendingPoContent() {
       setIsDrawerOpen(true);
     } finally {
       setActiveAction(null);
-    }
-  };
-
-  const handleCloseDrawer = () => {
-    setIsDrawerOpen(false);
-    setSelectedPoForDrawer(null);
-    // Remove query param cleanly without reloading
-    if (openLrForPoId) {
-      router.replace('/purchase/pending-po', { scroll: false });
     }
   };
 
@@ -189,6 +171,7 @@ function PendingPoContent() {
     router.push('/purchase');
   };
 
+  // Filter logic
   const filteredOrders = purchaseOrders.filter((po) => {
     const matchesSearch =
       po.po_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -221,6 +204,7 @@ function PendingPoContent() {
     );
   };
 
+  // Helper to parse multiple LRs from purchase.shipments and render compact badge
   const renderLrBadge = (lrString) => {
     if (!lrString || !lrString.trim()) {
       return (
@@ -239,9 +223,9 @@ function PendingPoContent() {
     const extraCount = lrList.length - 1;
 
     return (
-      <div
-        title={lrList.join(', ')}
-        className="inline-flex items-center gap-1.5 font-mono text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded shadow-2xs max-w-[190px]"
+      <div 
+        title={lrList.join(', ')} 
+        className="inline-flex items-center gap-1.5 font-mono text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded shadow-2xs max-w-47.5"
       >
         <Truck size={12} className="shrink-0 text-indigo-600" />
         <span className="truncate">{firstLr}</span>
@@ -257,7 +241,7 @@ function PendingPoContent() {
   return (
     <div className="min-h-screen bg-slate-50 p-6">
       <div className="mx-auto max-w-7xl space-y-6">
-
+        
         {/* Header Bar */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           <div>
@@ -265,7 +249,7 @@ function PendingPoContent() {
               <button
                 onClick={handleNavigateDashboard}
                 disabled={Boolean(activeAction)}
-                className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-600 transition-all hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50 min-h-[30px]"
+                className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-600 transition-all hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50 min-h-7.5"
               >
                 {activeAction === 'nav-dashboard' ? (
                   <Helix size="14" speed="2.5" color="#475569" />
@@ -304,7 +288,7 @@ function PendingPoContent() {
             <button
               onClick={handleRefresh}
               disabled={loading || Boolean(activeAction)}
-              className="flex min-w-[95px] items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-xs hover:bg-slate-50 active:scale-95 disabled:opacity-60"
+              className="flex min-w-23.75 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-xs hover:bg-slate-50 active:scale-95 disabled:opacity-60"
             >
               {loading || activeAction === 'refresh' ? (
                 <Helix size="16" speed="2.5" color="#4f46e5" />
@@ -406,13 +390,14 @@ function PendingPoContent() {
                     const isRowActive = activeAction === `row-${po.id}`;
 
                     return (
-                      <tr
-                        key={po.id}
+                      <tr 
+                        key={po.id} 
                         onClick={() => handleOpenDrawer(po)}
-                        className={`transition-colors cursor-pointer group ${isRowActive
-                            ? 'bg-indigo-50/70'
+                        className={`transition-colors cursor-pointer group ${
+                          isRowActive 
+                            ? 'bg-indigo-50/70' 
                             : 'hover:bg-indigo-50/40'
-                          }`}
+                        }`}
                       >
                         <td className="px-6 py-4 font-semibold text-slate-400">{index + 1}</td>
                         <td className="px-6 py-4 font-bold text-indigo-600 group-hover:underline">
@@ -446,7 +431,10 @@ function PendingPoContent() {
       {/* Attach LR Drawer */}
       <AttachLrDrawer
         isOpen={isDrawerOpen}
-        onClose={handleCloseDrawer}
+        onClose={() => {
+          setIsDrawerOpen(false);
+          setSelectedPoForDrawer(null);
+        }}
         selectedPO={selectedPoForDrawer}
         onSuccess={() => {
           fetchPendingPOs();
@@ -460,19 +448,5 @@ function PendingPoContent() {
         onWorkflowComplete={() => fetchPendingPOs()}
       />
     </div>
-  );
-}
-
-export default function PendingPoPage() {
-  return (
-    <Suspense
-      fallback={
-        <div className="min-h-screen flex items-center justify-center bg-slate-50">
-          <Helix size="36" speed="2.5" color="#4f46e5" />
-        </div>
-      }
-    >
-      <PendingPoContent />
-    </Suspense>
   );
 }

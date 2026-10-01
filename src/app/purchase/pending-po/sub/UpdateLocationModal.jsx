@@ -1,13 +1,20 @@
-'use client';
+"use client";
 
-import React, { useState } from 'react';
-import { MapPin, CheckCircle2, X, Send, Calendar } from 'lucide-react';
-import { supabase } from '../../../lib/supabase'; // Adjust import path
+import React, { useState } from "react";
+import { MapPin, CheckCircle2, X, Send, Calendar } from "lucide-react";
+import { supabase } from "../../../lib/supabase"; // Adjust import path
 
-export default function UpdateLocationModal({ isOpen, onClose, po, onSuccess }) {
-  const [eventDate, setEventDate] = useState(() => new Date().toISOString().split('T')[0]);
-  const [currentLocation, setCurrentLocation] = useState('');
-  const [remarks, setRemarks] = useState('');
+export default function UpdateLocationModal({
+  isOpen,
+  onClose,
+  po,
+  onSuccess,
+}) {
+  const [eventDate, setEventDate] = useState(
+    () => new Date().toISOString().split("T")[0],
+  );
+  const [currentLocation, setCurrentLocation] = useState("");
+  const [remarks, setRemarks] = useState("");
   const [reachedCalicut, setReachedCalicut] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -22,22 +29,22 @@ export default function UpdateLocationModal({ isOpen, onClose, po, onSuccess }) 
 
       // 1. Fetch shipment ID AND existing transporter_id / transporter name
       const { data: shipment, error: fetchError } = await supabase
-        .schema('purchase')
-        .from('shipments')
-        .select('id, transporter_id, transporter')
-        .eq('po_id', po.id)
-        .eq('lr_number', po.lr)
+        .schema("purchase")
+        .from("shipments")
+        .select("id, transporter_id, transporter")
+        .eq("po_id", po.id)
+        .eq("lr_number", po.lr)
         .maybeSingle();
 
       if (fetchError) {
-        console.error('ERROR fetching shipment:', fetchError.message);
-        alert('Failed to find corresponding shipment.');
+        console.error("ERROR fetching shipment:", fetchError.message);
+        alert("Failed to find corresponding shipment.");
         return;
       }
 
       if (!shipment) {
-        console.log('No shipment found');
-        alert('Shipment record not found for this PO and LR.');
+        console.log("No shipment found");
+        alert("Shipment record not found for this PO and LR.");
         return;
       }
 
@@ -45,13 +52,21 @@ export default function UpdateLocationModal({ isOpen, onClose, po, onSuccess }) 
       let resolvedTransporterId =
         shipment.transporter_id || po.transporter_id || null;
 
-      const transporterName = (shipment.transporter || po.transporter || '').trim();
+      const transporterName = (
+        shipment.transporter ||
+        po.transporter ||
+        ""
+      ).trim();
 
-      if (!resolvedTransporterId && transporterName && transporterName !== 'N/A') {
+      if (
+        !resolvedTransporterId &&
+        transporterName &&
+        transporterName !== "N/A"
+      ) {
         const { data: tData } = await supabase
-          .from('transporters')
-          .select('id')
-          .ilike('transporter_name', transporterName)
+          .from("transporters")
+          .select("id")
+          .ilike("transporter_name", transporterName)
           .maybeSingle();
 
         if (tData?.id) {
@@ -59,7 +74,9 @@ export default function UpdateLocationModal({ isOpen, onClose, po, onSuccess }) 
         }
       }
 
-      const status = reachedCalicut ? 'at_destination' : (po.status || 'in_transit');
+      const status = reachedCalicut
+        ? "at_destination"
+        : po.status || "in_transit";
 
       // 3. Prepare payload with transporter_id included
       const payload = {
@@ -73,44 +90,70 @@ export default function UpdateLocationModal({ isOpen, onClose, po, onSuccess }) 
 
       // 4. Insert into purchase.shipment_tracking_events
       const { data: insertedEvent, error: insertError } = await supabase
-        .schema('purchase')
-        .from('shipment_tracking_events')
+        .schema("purchase")
+        .from("shipment_tracking_events")
         .insert([payload])
         .select()
         .single();
 
       if (insertError) {
-        console.error('ERROR saving tracking event:', insertError.message);
-        alert('Failed to save tracking event.');
+        console.error("ERROR saving tracking event:", insertError.message);
+        alert("Failed to save tracking event.");
         return;
       }
 
       // 5. Backfill shipments table if transporter_id was empty
       if (resolvedTransporterId && !shipment.transporter_id) {
         await supabase
-          .schema('purchase')
-          .from('shipments')
+          .schema("purchase")
+          .from("shipments")
           .update({ transporter_id: resolvedTransporterId })
-          .eq('id', shipment.id);
+          .eq("id", shipment.id);
       }
 
       // 6. Update PO master status if reached destination
+      // ============================================================
+      // STEP 6: UPDATE SHIPMENT AND PO STATUS
+      // ============================================================
+
       if (reachedCalicut) {
-        await supabase
-          .schema('purchase')
-          .from('purchase_orders')
+        const now = new Date().toISOString();
+
+        // 6A. Update shipment status
+        const { error: shipmentUpdateError } = await supabase
+          .schema("purchase")
+          .from("shipments")
           .update({
-            status: 'at_destination',
-            updated_at: new Date().toISOString(),
+            shipment_status: "at_destination",
+            delivered_date: eventDate,
+            updated_at: now,
           })
-          .eq('id', po.id);
+          .eq("id", shipment.id);
+
+        if (shipmentUpdateError) {
+          throw shipmentUpdateError;
+        }
+
+        // 6B. Update purchase order status
+        const { error: poUpdateError } = await supabase
+          .schema("purchase")
+          .from("purchase_orders")
+          .update({
+            status: "at_destination",
+            updated_at: now,
+          })
+          .eq("id", po.id);
+
+        if (poUpdateError) {
+          throw poUpdateError;
+        }
       }
 
       // Reset form & notify parent with updated data
-      setCurrentLocation('');
-      setRemarks('');
+      setCurrentLocation("");
+      setRemarks("");
       setReachedCalicut(false);
-      setEventDate(new Date().toISOString().split('T')[0]);
+      setEventDate(new Date().toISOString().split("T")[0]);
 
       if (onSuccess) {
         onSuccess({
@@ -124,8 +167,8 @@ export default function UpdateLocationModal({ isOpen, onClose, po, onSuccess }) 
 
       onClose();
     } catch (err) {
-      console.error('Unexpected error:', err);
-      alert('An unexpected error occurred while saving.');
+      console.error("Unexpected error:", err);
+      alert("An unexpected error occurred while saving.");
     } finally {
       setSaving(false);
     }
@@ -139,10 +182,14 @@ export default function UpdateLocationModal({ isOpen, onClose, po, onSuccess }) 
           <div className="flex items-center gap-2">
             <MapPin size={18} className="text-indigo-600" />
             <h3 className="text-sm font-bold text-slate-800">
-              Update Location: <span className="text-indigo-600">{po.po_number}</span>
+              Update Location:{" "}
+              <span className="text-indigo-600">{po.po_number}</span>
             </h3>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
+          <button
+            onClick={onClose}
+            className="text-slate-400 hover:text-slate-600"
+          >
             <X size={16} />
           </button>
         </div>
@@ -152,7 +199,8 @@ export default function UpdateLocationModal({ isOpen, onClose, po, onSuccess }) 
           {/* Update Date Field */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
-              <Calendar size={13} className="text-slate-500" /> Date of Update / Event *
+              <Calendar size={13} className="text-slate-500" /> Date of Update /
+              Event *
             </label>
             <input
               type="date"
@@ -198,16 +246,19 @@ export default function UpdateLocationModal({ isOpen, onClose, po, onSuccess }) 
                 checked={reachedCalicut}
                 onChange={(e) => {
                   setReachedCalicut(e.target.checked);
-                  if (e.target.checked) setCurrentLocation('Calicut');
+                  if (e.target.checked) setCurrentLocation("Calicut");
                 }}
                 className="h-4 w-4 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500"
               />
               <div>
                 <span className="text-xs font-bold text-emerald-900 flex items-center gap-1">
-                  <CheckCircle2 size={14} className="text-emerald-600" /> Reached Calicut
+                  <CheckCircle2 size={14} className="text-emerald-600" />{" "}
+                  Reached Calicut
                 </span>
                 <p className="text-[10px] text-emerald-700">
-                  Marks status as <strong className="uppercase">at_destination</strong> and removes it from in-transit checks.
+                  Marks status as{" "}
+                  <strong className="uppercase">at_destination</strong> and
+                  removes it from in-transit checks.
                 </p>
               </div>
             </label>
@@ -228,7 +279,7 @@ export default function UpdateLocationModal({ isOpen, onClose, po, onSuccess }) 
               className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50 cursor-pointer"
             >
               <Send size={13} />
-              {saving ? 'Saving...' : 'Save & Next'}
+              {saving ? "Saving..." : "Save & Next"}
             </button>
           </div>
         </form>

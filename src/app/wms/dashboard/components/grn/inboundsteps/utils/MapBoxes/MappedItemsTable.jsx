@@ -1,11 +1,15 @@
 import React from "react";
 import { Table, Spin, Button, Tooltip, Popconfirm } from "antd";
-import { EditOutlined, DeleteOutlined, BarcodeOutlined } from "@ant-design/icons";
+import {
+  EditOutlined,
+  DeleteOutlined,
+  BarcodeOutlined,
+} from "@ant-design/icons";
 
 export default function MappedItemsTable({
-  mappedItems,
-  loading,
-  activeContainer,
+  mappedItems = [],
+  loading = false,
+  activeContainer = null,
   onEdit,
   onRemove,
 }) {
@@ -16,9 +20,11 @@ export default function MappedItemsTable({
       key: "item_name",
       render: (text, record) => (
         <div className="flex flex-col">
-          <span className="font-semibold text-slate-800">{text}</span>
+          <span className="font-semibold text-slate-800">
+            {text || record.name || "Unknown Item"}
+          </span>
           <span className="font-mono text-xs text-slate-500">
-            Code: {record.item_code}
+            Code: {record.item_code || record.code || "N/A"}
           </span>
         </div>
       ),
@@ -60,11 +66,12 @@ export default function MappedItemsTable({
       key: "qtys",
       align: "center",
       render: (_, record) => {
-        const qty = record.packed_qty ?? record.received_qty ?? 0;
+        const qty =
+          record.packed_qty ?? record.received_qty ?? record.quantity ?? 0;
         return (
           <div className="flex flex-col items-center font-mono">
             <span className="font-bold text-emerald-700">{qty}</span>
-            {record.rejected_qty > 0 && (
+            {Number(record.rejected_qty) > 0 && (
               <span className="text-[10px] text-rose-500">
                 ({record.rejected_qty} Rejected)
               </span>
@@ -78,29 +85,44 @@ export default function MappedItemsTable({
       key: "action",
       width: 100,
       align: "center",
-      render: (_, record) => {
-        // Target row_key first to uniquely identify split batch entries
-        const targetKey = record.row_key || record.id;
-        
-        return (
-          <div className="flex items-center justify-center gap-1">
-            <Tooltip title="Edit Details">
-              <Button
-                type="text"
-                icon={<EditOutlined className="text-blue-600" />}
-                size="small"
-                onClick={() => onEdit(record)}
-              />
-            </Tooltip>
-            <Popconfirm
-              title="Remove Item?"
-              onConfirm={() => onRemove(targetKey)}
-            >
-              <Button type="text" danger icon={<DeleteOutlined />} size="small" />
-            </Popconfirm>
-          </div>
-        );
-      },
+      render: (_, record) => (
+        <div className="flex items-center justify-center gap-1">
+          <Tooltip title="Edit Details">
+            <Button
+              type="text"
+              icon={<EditOutlined className="text-blue-600" />}
+              size="small"
+              onClick={(e) => {
+                e.stopPropagation();
+
+                console.log("Edit clicked:", record);
+
+                if (typeof onEdit === "function") {
+                  onEdit(record);
+                } else {
+                  console.error("onEdit is not a function");
+                }
+              }}
+            />
+          </Tooltip>
+
+          <Popconfirm
+            title="Remove Item?"
+            description="Are you sure you want to unmap this item?"
+            onConfirm={() => onRemove?.(record.row_key || record.id)}
+            okText="Yes"
+            cancelText="No"
+          >
+            <Button
+              type="text"
+              danger
+              icon={<DeleteOutlined />}
+              size="small"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </Popconfirm>
+        </div>
+      ),
     },
   ];
 
@@ -109,8 +131,7 @@ export default function MappedItemsTable({
       <Table
         dataSource={mappedItems}
         columns={columns}
-        // Dynamic key evaluation ensures no duplicate row warnings
-        rowKey={(record, index) => record.row_key || `${record.id}_${index}`}
+        rowKey="row_key"
         size="small"
         pagination={
           mappedItems?.length > 10
