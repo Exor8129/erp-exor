@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Truck,
   MapPin,
@@ -13,35 +13,35 @@ import {
   Package,
   Printer,
   RotateCcw,
-} from 'lucide-react';
-import { Button, Select } from 'antd';
-import { Helix } from 'ldrs/react';
-import 'ldrs/react/Helix.css';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
-import { supabase } from '../../../lib/supabase';
-import UpdateLocationModal from './UpdateLocationModal';
-import dayjs from 'dayjs';
+} from "lucide-react";
+import { Button, Select } from "antd";
+import { Helix } from "ldrs/react";
+import "ldrs/react/Helix.css";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import { supabase } from "../../../lib/supabase";
+import UpdateLocationModal from "./UpdateLocationModal";
+import dayjs from "dayjs";
 
 const getLocalStartOfTodayISO = () => {
-  return dayjs().startOf('day').toISOString();
+  return dayjs().startOf("day").toISOString();
 };
 
 const getLocalEndOfTodayISO = () => {
-  return dayjs().endOf('day').toISOString();
+  return dayjs().endOf("day").toISOString();
 };
 
 const normalizeStatus = (status) => {
-  if (!status) return '';
-  return String(status).trim().toLowerCase().replace(/\s+/g, '_');
+  if (!status) return "";
+  return String(status).trim().toLowerCase().replace(/\s+/g, "_");
 };
 
 const isAtDestination = (status) => {
-  return normalizeStatus(status) === 'at_destination';
+  return normalizeStatus(status) === "at_destination";
 };
 
 const isInTransit = (status) => {
-  return normalizeStatus(status) === 'in_transit';
+  return normalizeStatus(status) === "in_transit";
 };
 
 export default function InTransitQueueModal({
@@ -56,150 +56,233 @@ export default function InTransitQueueModal({
   const [activeAction, setActiveAction] = useState(null);
   const [isCompleted, setIsCompleted] = useState(false);
   const [generatingPdf, setGeneratingPdf] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
 
 const fetchInTransitShipments = async () => {
-    try {
-      setLoading(true);
+  try {
+    setLoading(true);
 
-      // 1. Fetch shipments
-      const { data: shipments, error: shipmentError } = await supabase
-        .schema('purchase')
-        .from('shipments')
-        .select(
-          `
-          id,
-          po_id,
-          transporter,
-          lr_number,
-          shipment_status,
-          dispatch_date,
-          no_of_boxes,
-          tracking_url,
-          transporter_id,
-          purchase_orders (
-            id,
-            po_number,
-            status,
-            supplier_id
-          )
+    // 1. Fetch shipments that are marked as In Transit
+    const { data: shipments, error: shipmentError } = await supabase
+      .schema("purchase")
+      .from("shipments")
+      .select(
         `
+        id,
+        po_id,
+        transporter,
+        lr_number,
+        shipment_status,
+        dispatch_date,
+        no_of_boxes,
+        tracking_url,
+        transporter_id,
+        purchase_orders (
+          id,
+          po_number,
+          status,
+          supplier_id
         )
-        .ilike('shipment_status', 'In Transit')
-        .neq('lr_number', '999000999')
-        .not('lr_number', 'is', null)
-        .order('created_at', { ascending: true });
+      `,
+      )
+      .ilike("shipment_status", "In Transit")
+      .neq("lr_number", "999000999")
+      .not("lr_number", "is", null)
+      .order("created_at", { ascending: true });
 
-      if (shipmentError) throw shipmentError;
+    if (shipmentError) throw shipmentError;
 
-      if (!shipments || shipments.length === 0) {
-        setInTransitShipments([]);
-        return;
-      }
+    if (!shipments || shipments.length === 0) {
+      setInTransitShipments([]);
+      return;
+    }
 
-      // 2. Fetch Vendors AND Transporters in parallel to resolve missing IDs
-      const supplierIds = Array.from(
-        new Set(
-          shipments
-            .map((s) => s.purchase_orders?.supplier_id)
-            .filter(Boolean)
-        )
-      );
+    // 2. Fetch Vendors AND Transporters in parallel
+    const supplierIds = Array.from(
+      new Set(
+        shipments
+          .map((s) => s.purchase_orders?.supplier_id)
+          .filter(Boolean),
+      ),
+    );
 
-      const [vendorRes, transporterRes] = await Promise.all([
-        supplierIds.length > 0
-          ? supabase.from('vendors').select('id, vendor_name').in('id', supplierIds)
-          : Promise.resolve({ data: [] }),
-        supabase.from('transporters').select('id, transporter_name'),
-      ]);
+    const [vendorRes, transporterRes] = await Promise.all([
+      supplierIds.length > 0
+        ? supabase
+            .from("vendors")
+            .select("id, vendor_name")
+            .in("id", supplierIds)
+        : Promise.resolve({ data: [] }),
 
-      const vendorMap = (vendorRes.data || []).reduce((acc, v) => {
-        acc[v.id] = v.vendor_name;
-        return acc;
-      }, {});
+      supabase
+        .from("transporters")
+        .select("id, transporter_name"),
+    ]);
 
-      // Build a lookup map by lowercased/trimmed transporter name
-      const transporterNameMap = (transporterRes.data || []).reduce((acc, t) => {
+    const vendorMap = (vendorRes.data || []).reduce((acc, v) => {
+      acc[v.id] = v.vendor_name;
+      return acc;
+    }, {});
+
+    // Build transporter lookup map
+    const transporterNameMap = (transporterRes.data || []).reduce(
+      (acc, t) => {
         if (t.transporter_name) {
           acc[t.transporter_name.trim().toLowerCase()] = t.id;
         }
         return acc;
-      }, {});
+      },
+      {},
+    );
 
-      // 3. Fetch latest tracking events
-      const shipmentIds = shipments.map((s) => s.id);
-      let updatedShipmentIdsSet = new Set();
-      let latestEventMap = {};
+    // 3. Fetch latest tracking events
+    const shipmentIds = shipments.map((s) => s.id);
 
-      if (shipmentIds.length > 0) {
-        const startOfTodayIso = getLocalStartOfTodayISO();
-        const endOfTodayIso = getLocalEndOfTodayISO();
+    let updatedShipmentIdsSet = new Set();
+    let latestEventMap = {};
 
-        const { data: events, error: eventError } = await supabase
-          .schema('purchase')
-          .from('shipment_tracking_events')
-          .select('shipment_id, status, location, remarks, event_time, transporter_id')
-          .in('shipment_id', shipmentIds)
-          .order('event_time', { ascending: false });
+    if (shipmentIds.length > 0) {
+      const startOfTodayIso = getLocalStartOfTodayISO();
+      const endOfTodayIso = getLocalEndOfTodayISO();
 
-        if (eventError) throw eventError;
+      const { data: events, error: eventError } = await supabase
+        .schema("purchase")
+        .from("shipment_tracking_events")
+        .select(
+          "shipment_id, status, location, remarks, event_time, transporter_id",
+        )
+        .in("shipment_id", shipmentIds)
+        .order("event_time", { ascending: false });
 
-        (events || []).forEach((e) => {
-          if (!latestEventMap[e.shipment_id]) {
-            latestEventMap[e.shipment_id] = e;
-          }
-          if (
-            e.event_time &&
-            new Date(e.event_time) >= new Date(startOfTodayIso) &&
-            new Date(e.event_time) <= new Date(endOfTodayIso)
-          ) {
-            updatedShipmentIdsSet.add(e.shipment_id);
-          }
-        });
+      if (eventError) throw eventError;
+
+      (events || []).forEach((e) => {
+        // Since events are ordered DESC,
+        // the first event for each shipment is the latest event.
+        if (!latestEventMap[e.shipment_id]) {
+          latestEventMap[e.shipment_id] = e;
+        }
+
+        // Check whether this shipment was updated today
+        if (
+          e.event_time &&
+          new Date(e.event_time) >= new Date(startOfTodayIso) &&
+          new Date(e.event_time) <= new Date(endOfTodayIso)
+        ) {
+          updatedShipmentIdsSet.add(e.shipment_id);
+        }
+      });
+    }
+
+    // ============================================================
+    // 4. IMPORTANT:
+    // Only keep shipments whose LATEST tracking status is
+    // still "In Transit".
+    //
+    // If the latest event is "At Destination",
+    // remove the LR from today's checking queue.
+    //
+    // If there is NO tracking event yet, keep it in the queue.
+    // ============================================================
+
+    const activeInTransitShipments = shipments.filter((shipment) => {
+      const latestEvent = latestEventMap[shipment.id];
+
+      // No tracking history yet.
+      // Staff still needs to check this LR.
+      if (!latestEvent) {
+        return true;
       }
 
-      // 4. Map shipment items with resolved transporter_id
-      const formatted = shipments.map((s) => {
-        const parentPO = s.purchase_orders || {};
-        const latestEvent = latestEventMap[s.id] || null;
+      const latestStatus = normalizeStatus(latestEvent.status);
 
-        const cleanTransporterName = s.transporter?.trim().toLowerCase();
-        // Priority: 1. DB shipment column -> 2. Name lookup -> 3. Last event -> 4. null
-        const resolvedTransporterId =
-          s.transporter_id ||
-          (cleanTransporterName ? transporterNameMap[cleanTransporterName] : null) ||
-          latestEvent?.transporter_id ||
-          null;
+      // ONLY show currently-in-transit shipments
+      return latestStatus === "in_transit";
+    });
 
-        return {
-          id: parentPO.id || s.po_id,
-          shipment_id: s.id,
-          po_number: parentPO.po_number || 'N/A',
-          status: s.shipment_status || parentPO.status || 'In Transit',
-          supplier_id: parentPO.supplier_id,
-          vendor_name: vendorMap[parentPO.supplier_id] || 'N/A',
-          lr: s.lr_number?.trim() || 'No LR',
-          transporter: s.transporter?.trim() || 'N/A',
-          no_of_boxes: Number(s.no_of_boxes) || 0,
-          tracking_url: s.tracking_url || null,
-          transporter_id: resolvedTransporterId,
-          updatedToday: updatedShipmentIdsSet.has(s.id),
-          todayStatus: latestEvent?.status || null,
-          todayLocation: latestEvent?.location || '-',
-          todayRemarks: latestEvent?.remarks || '-',
-          todayEventTime: latestEvent?.event_time || null,
-        };
-      });
+    // 5. Map shipment data
+    const formatted = activeInTransitShipments.map((s) => {
+      const parentPO = s.purchase_orders || {};
+      const latestEvent = latestEventMap[s.id] || null;
 
-      setInTransitShipments(formatted);
-      setCurrentIndex(0);
-      setIsCompleted(false);
-    } catch (err) {
-      console.error('Error loading in-transit queue:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+      const cleanTransporterName = s.transporter
+        ?.trim()
+        .toLowerCase();
+
+      // Priority:
+      // 1. Shipment transporter_id
+      // 2. Transporter name lookup
+      // 3. Latest tracking event transporter_id
+      // 4. null
+      const resolvedTransporterId =
+        s.transporter_id ||
+        (cleanTransporterName
+          ? transporterNameMap[cleanTransporterName]
+          : null) ||
+        latestEvent?.transporter_id ||
+        null;
+
+      return {
+        id: parentPO.id || s.po_id,
+        shipment_id: s.id,
+
+        po_number: parentPO.po_number || "N/A",
+
+        status:
+          s.shipment_status ||
+          parentPO.status ||
+          "In Transit",
+
+        supplier_id: parentPO.supplier_id,
+
+        vendor_name:
+          vendorMap[parentPO.supplier_id] || "N/A",
+
+        lr: s.lr_number?.trim() || "No LR",
+
+        transporter:
+          s.transporter?.trim() || "N/A",
+
+        no_of_boxes:
+          Number(s.no_of_boxes) || 0,
+
+        tracking_url:
+          s.tracking_url || null,
+
+        transporter_id:
+          resolvedTransporterId,
+
+        updatedToday:
+          updatedShipmentIdsSet.has(s.id),
+
+        todayStatus:
+          latestEvent?.status || null,
+
+        todayLocation:
+          latestEvent?.location || "-",
+
+        todayRemarks:
+          latestEvent?.remarks || "-",
+
+        todayEventTime:
+          latestEvent?.event_time || null,
+      };
+    });
+
+    // 6. Update queue
+    setInTransitShipments(formatted);
+    setCurrentIndex(0);
+    setIsCompleted(false);
+
+  } catch (err) {
+    console.error(
+      "Error loading in-transit queue:",
+      err,
+    );
+  } finally {
+    setLoading(false);
+  }
+};
 
   useEffect(() => {
     if (isOpen) {
@@ -211,7 +294,9 @@ const fetchInTransitShipments = async () => {
   const progressStats = useMemo(() => {
     const total = inTransitShipments.length;
     if (total === 0) return { updatedCount: 0, pendingCount: 0, percentage: 0 };
-    const updatedCount = inTransitShipments.filter((p) => p.updatedToday).length;
+    const updatedCount = inTransitShipments.filter(
+      (p) => p.updatedToday,
+    ).length;
     const pendingCount = total - updatedCount;
     const percentage = Math.round((updatedCount / total) * 100);
     return { updatedCount, pendingCount, percentage };
@@ -221,7 +306,8 @@ const fetchInTransitShipments = async () => {
     return inTransitShipments.map((item, idx) => ({
       value: idx,
       label: `#${idx + 1} | ${item.po_number} — ${item.vendor_name} (LR: ${item.lr})`,
-      searchText: `${item.po_number} ${item.lr} ${item.vendor_name} ${item.transporter}`.toLowerCase(),
+      searchText:
+        `${item.po_number} ${item.lr} ${item.vendor_name} ${item.transporter}`.toLowerCase(),
       raw: item,
     }));
   }, [inTransitShipments]);
@@ -260,31 +346,31 @@ const fetchInTransitShipments = async () => {
 
     if (currentShipment.updatedToday) {
       const confirmRedo = window.confirm(
-        `LR (${currentShipment.lr}) was already updated today.\n\nDo you want to add another tracking entry or overwrite location notes?`
+        `LR (${currentShipment.lr}) was already updated today.\n\nDo you want to add another tracking entry or overwrite location notes?`,
       );
       if (!confirmRedo) return;
     }
 
     try {
-      setActiveAction('open-update');
+      setActiveAction("open-update");
 
-      if (currentShipment.lr && currentShipment.lr !== 'No LR') {
+      if (currentShipment.lr && currentShipment.lr !== "No LR") {
         await navigator.clipboard.writeText(currentShipment.lr);
       }
 
       if (currentShipment.tracking_url) {
         const formattedUrl =
-          currentShipment.tracking_url.startsWith('http://') ||
-          currentShipment.tracking_url.startsWith('https://')
+          currentShipment.tracking_url.startsWith("http://") ||
+          currentShipment.tracking_url.startsWith("https://")
             ? currentShipment.tracking_url
             : `https://${currentShipment.tracking_url}`;
 
-        window.open(formattedUrl, '_blank', 'noopener,noreferrer');
+        window.open(formattedUrl, "_blank", "noopener,noreferrer");
       }
 
       setIsUpdateOpen(true);
     } catch (err) {
-      console.error('Error opening tracking modal:', err);
+      console.error("Error opening tracking modal:", err);
     } finally {
       setActiveAction(null);
     }
@@ -299,15 +385,16 @@ const fetchInTransitShipments = async () => {
           ? {
               ...item,
               updatedToday: true,
-              transporter_id: updatedData?.transporter_id || item.transporter_id,
+              transporter_id:
+                updatedData?.transporter_id || item.transporter_id,
               todayStatus: updatedData?.status || item.todayStatus,
               todayLocation: updatedData?.location || item.todayLocation,
               todayRemarks: updatedData?.remarks || item.todayRemarks,
               todayEventTime:
                 updatedData?.event_time || new Date().toISOString(),
             }
-          : item
-      )
+          : item,
+      ),
     );
 
     if (currentIndex >= inTransitShipments.length - 1) {
@@ -319,13 +406,14 @@ const fetchInTransitShipments = async () => {
   };
 
   const fetchTodayTrackingEventsFromDB = async () => {
-    const todayStart = dayjs().startOf('day').toISOString();
-    const todayEnd = dayjs().endOf('day').toISOString();
+    const todayStart = dayjs().startOf("day").toISOString();
+    const todayEnd = dayjs().endOf("day").toISOString();
 
     const { data: events, error } = await supabase
-      .schema('purchase')
-      .from('shipment_tracking_events')
-      .select(`
+      .schema("purchase")
+      .from("shipment_tracking_events")
+      .select(
+        `
         id,
         shipment_id,
         transporter_id,
@@ -345,13 +433,14 @@ const fetchInTransitShipments = async () => {
             supplier_id
           )
         )
-      `)
-      .gte('event_time', todayStart)
-      .lte('event_time', todayEnd)
-      .order('event_time', { ascending: false });
+      `,
+      )
+      .gte("event_time", todayStart)
+      .lte("event_time", todayEnd)
+      .order("event_time", { ascending: false });
 
     if (error) {
-      console.error('Error fetching today tracking events:', error);
+      console.error("Error fetching today tracking events:", error);
       throw error;
     }
 
@@ -359,7 +448,7 @@ const fetchInTransitShipments = async () => {
 
     const validEvents = events.filter((e) => {
       const s = normalizeStatus(e.status);
-      return s === 'in_transit' || s === 'at_destination';
+      return s === "in_transit" || s === "at_destination";
     });
 
     const latestEventByShipment = new Map();
@@ -375,21 +464,21 @@ const fetchInTransitShipments = async () => {
       new Set(
         uniqueEvents
           .map((e) => e.shipments?.purchase_orders?.supplier_id)
-          .filter(Boolean)
-      )
+          .filter(Boolean),
+      ),
     );
 
     let vendorMap = {};
     if (supplierIds.length > 0) {
       const { data: vendors, error: vendorError } = await supabase
-        .schema('public')
-        .from('vendors')
-        .select('id, vendor_name')
-        .in('id', supplierIds);
+        .schema("public")
+        .from("vendors")
+        .select("id, vendor_name")
+        .in("id", supplierIds);
 
       if (!vendorError && vendors) {
         vendorMap = Object.fromEntries(
-          vendors.map((v) => [v.id, v.vendor_name])
+          vendors.map((v) => [v.id, v.vendor_name]),
         );
       }
     }
@@ -403,15 +492,15 @@ const fetchInTransitShipments = async () => {
         transporterId: ev.transporter_id,
         status: ev.status,
         normalizedStatus: normalizeStatus(ev.status),
-        location: ev.location || '-',
-        remarks: ev.remarks || '-',
+        location: ev.location || "-",
+        remarks: ev.remarks || "-",
         eventTime: ev.event_time,
-        poNumber: po.po_number || '-',
+        poNumber: po.po_number || "-",
         supplierId: po.supplier_id,
-        vendorName: vendorMap[po.supplier_id] || '-',
-        lrNumber: shipment.lr_number || '-',
+        vendorName: vendorMap[po.supplier_id] || "-",
+        lrNumber: shipment.lr_number || "-",
         boxes: Number(shipment.no_of_boxes || 0),
-        transporter: shipment.transporter || 'Unassigned / Direct',
+        transporter: shipment.transporter || "Unassigned / Direct",
       };
     });
   };
@@ -424,62 +513,62 @@ const fetchInTransitShipments = async () => {
 
       if (todayEvents.length === 0) {
         alert(
-          'No records found in shipment_tracking_events for today with status "In Transit" or "at_destination".'
+          'No records found in shipment_tracking_events for today with status "In Transit" or "at_destination".',
         );
         return;
       }
 
       const receivingToday = todayEvents.filter((e) =>
-        isAtDestination(e.normalizedStatus)
+        isAtDestination(e.normalizedStatus),
       );
       const inTransitToday = todayEvents.filter((e) =>
-        isInTransit(e.normalizedStatus)
+        isInTransit(e.normalizedStatus),
       );
 
-      const doc = new jsPDF('p', 'mm', 'a4');
+      const doc = new jsPDF("p", "mm", "a4");
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
-      const todayFormatted = dayjs().format('DD/MM/YYYY');
+      const todayFormatted = dayjs().format("DD/MM/YYYY");
 
-      doc.setFont('helvetica', 'bold');
+      doc.setFont("helvetica", "bold");
       doc.setFontSize(15);
       doc.setTextColor(30, 41, 59);
-      doc.text('Daily In-Transit LR Tracking Summary', 14, 16);
+      doc.text("Daily In-Transit LR Tracking Summary", 14, 16);
 
-      doc.setFont('helvetica', 'normal');
+      doc.setFont("helvetica", "normal");
       doc.setFontSize(8.5);
       doc.setTextColor(90);
       doc.text(
         `Generated Date: ${todayFormatted} | Total Events Logged Today: ${todayEvents.length}`,
         14,
-        22
+        22,
       );
 
       let currentStartY = 29;
 
       const totalReceivingBoxes = receivingToday.reduce(
         (sum, item) => sum + Number(item.boxes || 0),
-        0
+        0,
       );
 
-      doc.setFont('helvetica', 'bold');
+      doc.setFont("helvetica", "bold");
       doc.setFontSize(11);
       doc.setTextColor(16, 107, 72);
       doc.text(
         `Details of boxes receiving today (${totalReceivingBoxes} Boxes across ${receivingToday.length} LRs)`,
         14,
-        currentStartY
+        currentStartY,
       );
 
       const receivingHeaders = [
         [
-          'Supplier / Party',
-          'PO Number',
-          'LR / Bilty No.',
-          'Boxes',
-          'Transporter',
-          'Location',
-          'Remarks',
+          "Supplier / Party",
+          "PO Number",
+          "LR / Bilty No.",
+          "Boxes",
+          "Transporter",
+          "Location",
+          "Remarks",
         ],
       ];
 
@@ -491,18 +580,18 @@ const fetchInTransitShipments = async () => {
               p.lrNumber,
               p.boxes,
               p.transporter,
-              p.location === '-' ? 'At Destination' : p.location,
+              p.location === "-" ? "At Destination" : p.location,
               p.remarks,
             ])
           : [
               [
-                '-',
-                '-',
-                '-',
+                "-",
+                "-",
+                "-",
                 0,
-                '-',
-                'No shipments at destination logged today',
-                '-',
+                "-",
+                "No shipments at destination logged today",
+                "-",
               ],
             ];
 
@@ -510,27 +599,27 @@ const fetchInTransitShipments = async () => {
         startY: currentStartY + 4,
         head: receivingHeaders,
         body: receivingRows,
-        theme: 'grid',
+        theme: "grid",
         styles: {
           fontSize: 7.5,
           cellPadding: 2,
-          overflow: 'linebreak',
-          valign: 'middle',
+          overflow: "linebreak",
+          valign: "middle",
         },
         headStyles: {
           fillColor: [16, 149, 99],
           textColor: [255, 255, 255],
-          fontStyle: 'bold',
+          fontStyle: "bold",
           fontSize: 7.5,
         },
         columnStyles: {
           0: { cellWidth: 32 },
-          1: { cellWidth: 22, fontStyle: 'bold' },
-          2: { cellWidth: 26, fontStyle: 'bold' },
-          3: { cellWidth: 14, halign: 'center', fontStyle: 'bold' },
+          1: { cellWidth: 22, fontStyle: "bold" },
+          2: { cellWidth: 26, fontStyle: "bold" },
+          3: { cellWidth: 14, halign: "center", fontStyle: "bold" },
           4: { cellWidth: 24 },
           5: { cellWidth: 28 },
-          6: { cellWidth: 'auto' },
+          6: { cellWidth: "auto" },
         },
         didDrawPage: (data) => {
           currentStartY = data.cursor.y + 10;
@@ -540,7 +629,7 @@ const fetchInTransitShipments = async () => {
       currentStartY = doc.lastAutoTable.finalY + 12;
 
       const groupedByTransporter = inTransitToday.reduce((acc, item) => {
-        const key = item.transporter || 'Unassigned / Direct';
+        const key = item.transporter || "Unassigned / Direct";
         if (!acc[key]) acc[key] = [];
         acc[key].push(item);
         return acc;
@@ -551,7 +640,7 @@ const fetchInTransitShipments = async () => {
           doc.addPage();
           currentStartY = 20;
         }
-        doc.setFont('helvetica', 'italic');
+        doc.setFont("helvetica", "italic");
         doc.setFontSize(9);
         doc.setTextColor(120);
         doc.text('No "In Transit" events logged today.', 14, currentStartY);
@@ -560,7 +649,7 @@ const fetchInTransitShipments = async () => {
           ([transporterName, items]) => {
             const totalBoxes = items.reduce(
               (sum, item) => sum + Number(item.boxes || 0),
-              0
+              0,
             );
 
             if (currentStartY > 250) {
@@ -568,29 +657,29 @@ const fetchInTransitShipments = async () => {
               currentStartY = 20;
             }
 
-            doc.setFont('helvetica', 'bold');
+            doc.setFont("helvetica", "bold");
             doc.setFontSize(11);
             doc.setTextColor(30, 41, 59);
             doc.text(`Transporter: ${transporterName}`, 14, currentStartY);
 
-            doc.setFont('helvetica', 'normal');
+            doc.setFont("helvetica", "normal");
             doc.setFontSize(8);
             doc.setTextColor(90);
             doc.text(
-              `${items.length} ${items.length === 1 ? 'LR' : 'LRs'} | ${totalBoxes} Boxes`,
+              `${items.length} ${items.length === 1 ? "LR" : "LRs"} | ${totalBoxes} Boxes`,
               14,
-              currentStartY + 5
+              currentStartY + 5,
             );
 
             const tableHeaders = [
               [
-                'Supplier / Party',
-                'PO Number',
-                'LR / Bilty No.',
-                'Boxes',
-                'Status Today',
-                'Location Today',
-                'Remarks Today',
+                "Supplier / Party",
+                "PO Number",
+                "LR / Bilty No.",
+                "Boxes",
+                "Status Today",
+                "Location Today",
+                "Remarks Today",
               ],
             ];
 
@@ -599,7 +688,7 @@ const fetchInTransitShipments = async () => {
               p.poNumber,
               p.lrNumber,
               p.boxes,
-              p.status || 'In Transit',
+              p.status || "In Transit",
               p.location,
               p.remarks,
             ]);
@@ -608,27 +697,27 @@ const fetchInTransitShipments = async () => {
               startY: currentStartY + 9,
               head: tableHeaders,
               body: tableRows,
-              theme: 'grid',
+              theme: "grid",
               styles: {
                 fontSize: 7.5,
                 cellPadding: 2,
-                overflow: 'linebreak',
-                valign: 'middle',
+                overflow: "linebreak",
+                valign: "middle",
               },
               headStyles: {
                 fillColor: [67, 56, 202],
                 textColor: [255, 255, 255],
-                fontStyle: 'bold',
+                fontStyle: "bold",
                 fontSize: 7.5,
               },
               columnStyles: {
                 0: { cellWidth: 32 },
-                1: { cellWidth: 22, fontStyle: 'bold' },
+                1: { cellWidth: 22, fontStyle: "bold" },
                 2: { cellWidth: 26 },
-                3: { cellWidth: 14, halign: 'center', fontStyle: 'bold' },
+                3: { cellWidth: 14, halign: "center", fontStyle: "bold" },
                 4: { cellWidth: 24 },
                 5: { cellWidth: 28 },
-                6: { cellWidth: 'auto' },
+                6: { cellWidth: "auto" },
               },
               didDrawPage: (data) => {
                 currentStartY = data.cursor.y + 10;
@@ -636,28 +725,28 @@ const fetchInTransitShipments = async () => {
             });
 
             currentStartY = doc.lastAutoTable.finalY + 10;
-          }
+          },
         );
       }
 
       const pageCount = doc.internal.getNumberOfPages();
       for (let i = 1; i <= pageCount; i++) {
         doc.setPage(i);
-        doc.setFont('helvetica', 'normal');
+        doc.setFont("helvetica", "normal");
         doc.setFontSize(7.5);
         doc.setTextColor(140);
         doc.text(
           `Page ${i} of ${pageCount} • Daily Logistics LR Report`,
           pageWidth / 2,
           pageHeight - 7,
-          { align: 'center' }
+          { align: "center" },
         );
       }
 
-      doc.save(`Transporter_LR_Summary_${dayjs().format('YYYY-MM-DD')}.pdf`);
+      doc.save(`Transporter_LR_Summary_${dayjs().format("YYYY-MM-DD")}.pdf`);
     } catch (err) {
-      console.error('Error generating PDF:', err);
-      alert('Failed to generate tracking summary PDF.');
+      console.error("Error generating PDF:", err);
+      alert("Failed to generate tracking summary PDF.");
     } finally {
       setGeneratingPdf(false);
     }
@@ -701,7 +790,8 @@ const fetchInTransitShipments = async () => {
               <div className="flex items-center justify-between text-[11px] font-semibold text-slate-600 mb-1.5">
                 <span className="flex items-center gap-1.5">
                   <span className="h-2 w-2 rounded-full bg-emerald-500"></span>
-                  Daily Progress: {progressStats.updatedCount} of {inTransitShipments.length} Completed
+                  Daily Progress: {progressStats.updatedCount} of{" "}
+                  {inTransitShipments.length} Completed
                 </span>
                 <span className="font-mono font-bold text-indigo-600">
                   {progressStats.percentage}%
@@ -721,13 +811,14 @@ const fetchInTransitShipments = async () => {
                   const isCurrent = idx === currentIndex && !isCompleted;
                   const isUpdated = shipment.updatedToday;
 
-                  let dotColor = 'bg-amber-300 hover:bg-amber-400 text-amber-800';
+                  let dotColor =
+                    "bg-amber-300 hover:bg-amber-400 text-amber-800";
                   if (isUpdated) {
-                    dotColor = 'bg-emerald-500 hover:bg-emerald-600 text-white';
+                    dotColor = "bg-emerald-500 hover:bg-emerald-600 text-white";
                   }
                   if (isCurrent) {
                     dotColor =
-                      'ring-2 ring-indigo-500 ring-offset-1 bg-indigo-600 text-white font-bold scale-110';
+                      "ring-2 ring-indigo-500 ring-offset-1 bg-indigo-600 text-white font-bold scale-110";
                   }
 
                   return (
@@ -736,7 +827,7 @@ const fetchInTransitShipments = async () => {
                       type="button"
                       onClick={() => handleJumpToIndex(idx)}
                       title={`#${idx + 1}: ${shipment.po_number} (${shipment.lr}) - ${
-                        isUpdated ? 'Logged Today' : 'Pending'
+                        isUpdated ? "Logged Today" : "Pending"
                       }`}
                       className={`h-5 min-w-[20px] px-1 rounded-md text-[9px] font-mono flex items-center justify-center transition-all cursor-pointer ${dotColor}`}
                     >
@@ -763,7 +854,9 @@ const fetchInTransitShipments = async () => {
                   size={40}
                   className="mx-auto mb-3 text-emerald-500"
                 />
-                <h3 className="text-sm font-bold text-slate-800">All caught up!</h3>
+                <h3 className="text-sm font-bold text-slate-800">
+                  All caught up!
+                </h3>
                 <p className="mt-1 text-xs text-slate-500">
                   No active in-transit shipments require checking right now.
                 </p>
@@ -774,8 +867,8 @@ const fetchInTransitShipments = async () => {
                 <div
                   className={`mx-auto flex h-14 w-14 items-center justify-center rounded-full border ${
                     isAllUpdatedToday
-                      ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
-                      : 'bg-amber-50 text-amber-600 border-amber-200'
+                      ? "bg-emerald-50 text-emerald-600 border-emerald-200"
+                      : "bg-amber-50 text-amber-600 border-amber-200"
                   }`}
                 >
                   {isAllUpdatedToday ? (
@@ -787,8 +880,8 @@ const fetchInTransitShipments = async () => {
                 <div>
                   <h3 className="text-base font-bold text-slate-800">
                     {isAllUpdatedToday
-                      ? 'Daily Check Completed!'
-                      : 'Queue Review Incomplete'}
+                      ? "Daily Check Completed!"
+                      : "Queue Review Incomplete"}
                   </h3>
                   <p className="mt-1 text-xs text-slate-500 max-w-sm mx-auto">
                     {isAllUpdatedToday
@@ -834,7 +927,7 @@ const fetchInTransitShipments = async () => {
                   >
                     <Printer size={15} />
                     {generatingPdf
-                      ? 'Generating PDF...'
+                      ? "Generating PDF..."
                       : "Print Today's Summary"}
                   </button>
 
@@ -842,10 +935,10 @@ const fetchInTransitShipments = async () => {
                     onClick={() => {
                       setIsCompleted(false);
                       const firstPendingIdx = inTransitShipments.findIndex(
-                        (s) => !s.updatedToday
+                        (s) => !s.updatedToday,
                       );
                       setCurrentIndex(
-                        firstPendingIdx !== -1 ? firstPendingIdx : 0
+                        firstPendingIdx !== -1 ? firstPendingIdx : 0,
                       );
                     }}
                     className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3.5 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
@@ -879,11 +972,13 @@ const fetchInTransitShipments = async () => {
                     onSearch={(text) => setSearchQuery(text)}
                     onSelect={(val) => {
                       handleJumpToIndex(val);
-                      setSearchQuery('');
+                      setSearchQuery("");
                     }}
-                    onBlur={() => setSearchQuery('')}
+                    onBlur={() => setSearchQuery("")}
                     filterOption={(input, option) =>
-                      option?.searchText?.includes(input.toLowerCase().trim()) ?? false
+                      option?.searchText?.includes(
+                        input.toLowerCase().trim(),
+                      ) ?? false
                     }
                     options={searchOptions}
                     optionRender={(option) => {
@@ -904,11 +999,11 @@ const fetchInTransitShipments = async () => {
                           <span
                             className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded font-semibold ${
                               item.updatedToday
-                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                : 'bg-amber-50 text-amber-700 border border-amber-200'
+                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                : "bg-amber-50 text-amber-700 border border-amber-200"
                             }`}
                           >
-                            {item.updatedToday ? '✓ Logged' : '• Pending'}
+                            {item.updatedToday ? "✓ Logged" : "• Pending"}
                           </span>
                         </div>
                       );
@@ -941,8 +1036,8 @@ const fetchInTransitShipments = async () => {
                 <div
                   className={`rounded-xl border p-4 space-y-3 transition-colors ${
                     currentShipment.updatedToday
-                      ? 'border-emerald-200 bg-emerald-50/20'
-                      : 'border-slate-200 bg-slate-50/50'
+                      ? "border-emerald-200 bg-emerald-50/20"
+                      : "border-slate-200 bg-slate-50/50"
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
@@ -993,8 +1088,8 @@ const fetchInTransitShipments = async () => {
                       </span>
                       <p className="text-xs font-bold text-slate-800 flex items-center justify-end gap-1">
                         <Package size={13} className="text-indigo-500" />
-                        {currentShipment.no_of_boxes || 0}{' '}
-                        {currentShipment.no_of_boxes === 1 ? 'Box' : 'Boxes'}
+                        {currentShipment.no_of_boxes || 0}{" "}
+                        {currentShipment.no_of_boxes === 1 ? "Box" : "Boxes"}
                       </p>
                     </div>
                   </div>
@@ -1005,9 +1100,7 @@ const fetchInTransitShipments = async () => {
                   <button
                     onClick={handlePrev}
                     disabled={
-                      currentIndex === 0 ||
-                      loading ||
-                      Boolean(activeAction)
+                      currentIndex === 0 || loading || Boolean(activeAction)
                     }
                     className="flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition disabled:opacity-40 cursor-pointer"
                   >
@@ -1019,11 +1112,11 @@ const fetchInTransitShipments = async () => {
                     disabled={loading || Boolean(activeAction)}
                     className={`flex min-w-[170px] flex-1 items-center justify-center gap-2 rounded-lg px-4 py-2 text-xs font-bold shadow-sm transition-all disabled:opacity-70 disabled:pointer-events-none cursor-pointer ${
                       currentShipment.updatedToday
-                        ? 'bg-emerald-600 text-white hover:bg-emerald-700'
-                        : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                        ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                        : "bg-indigo-600 text-white hover:bg-indigo-700"
                     }`}
                   >
-                    {activeAction === 'open-update' ? (
+                    {activeAction === "open-update" ? (
                       <Helix size="16" speed="2.5" color="white" />
                     ) : currentShipment.updatedToday ? (
                       <>
@@ -1042,8 +1135,8 @@ const fetchInTransitShipments = async () => {
                     className="flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition disabled:opacity-40 cursor-pointer"
                   >
                     {currentIndex === inTransitShipments.length - 1
-                      ? 'Finish'
-                      : 'Next'}{' '}
+                      ? "Finish"
+                      : "Next"}{" "}
                     <ChevronRight size={16} />
                   </button>
                 </div>
