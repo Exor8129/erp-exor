@@ -66,6 +66,7 @@ const DiscrepancySummary = forwardRef(function DiscrepancySummary(
   const fetchDiscrepancyReport = useCallback(async () => {
     if (!activeGrnId) return;
 
+
     try {
       setLoading(true);
 
@@ -76,7 +77,6 @@ const DiscrepancySummary = forwardRef(function DiscrepancySummary(
         .select(
           `
           id,
-          expected_qty,
           received_qty,
           purchase_order_items!po_item_id (
             id,
@@ -91,75 +91,109 @@ const DiscrepancySummary = forwardRef(function DiscrepancySummary(
 
       if (grnError) throw grnError;
 
+
+
       const grnItemIds = (grnItemsData || []).map((i) => i.id);
 
-      // Step 2: Fetch mapped container items if GRN items exist
-      let packedItemsData = [];
-      if (grnItemIds.length > 0) {
-        const { data: packedData, error: packedError } = await supabase
-          .schema("purchase")
-          .from("container_items")
-          .select(
-            `
-            id,
-            container_id,
-            grn_item_id,
-            accepted_qty,
-            rejected_qty,
-            containers!container_id (
-              id,
-              barcode,
-              status
-            )
-          `,
-          )
-          .in("grn_item_id", grnItemIds);
+// Step 2: Fetch mapped container items if GRN items exist
+let packedItemsData = [];
 
-        if (packedError) throw packedError;
-        packedItemsData = packedData || [];
-      }
+if (grnItemIds.length > 0) {
+
+
+  const { data: packedData, error: packedError } = await supabase
+    .schema("purchase")
+    .from("container_items")
+    .select(`
+      id,
+      container_id,
+      grn_item_id,
+      remarks,
+
+      containers!container_id (
+        id,
+        barcode,
+        status
+      ),
+
+      container_item_details (
+        id,
+        container_item_id,
+        batch_number,
+        serial_number,
+        expiry_date,
+        mrp,
+        qty,
+        item_id,
+        container_id
+      )
+    `)
+    .in("grn_item_id", grnItemIds);
+
+  if (packedError) {
+    console.error("Error fetching packed items:", packedError);
+    throw packedError;
+  }
+
+  packedItemsData = packedData || [];
+
+
+}
 
       // Group container items by grn_item_id & track per-container quantities
       const packedMap = {};
       const containerMap = new Map();
 
-      packedItemsData.forEach((cItem) => {
-        const itemId = cItem.grn_item_id;
-        const accepted = Number(cItem.accepted_qty || 0);
-        const rejected = Number(cItem.rejected_qty || 0);
+packedItemsData.forEach((cItem) => {
+  const itemId = cItem.grn_item_id;
 
-        if (!packedMap[itemId]) {
-          packedMap[itemId] = {
-            accepted: 0,
-            rejected: 0,
-            containers: [],
-            containerDetails: [], // Stores breakdown per container
-          };
-        }
+  // Calculate accepted quantity from container_item_details.qty
+  const accepted = (cItem.container_item_details || []).reduce(
+    (sum, detail) => sum + Number(detail.qty || 0),
+    0
+  );
 
-        packedMap[itemId].accepted += accepted;
-        packedMap[itemId].rejected += rejected;
+  // Currently no rejected qty is stored in container_items/container_item_details
+  const rejected = 0;
 
-        if (cItem.containers) {
-          const containerCode = cItem.containers.barcode;
-          packedMap[itemId].containers.push(containerCode);
 
-          // Add container breakdown
-          packedMap[itemId].containerDetails.push({
-            container_id: cItem.container_id,
-            code: containerCode,
-            accepted,
-            rejected,
-          });
 
-          containerMap.set(cItem.containers.id, {
-            id: cItem.containers.id,
-            code: containerCode,
-            type: cItem.containers.container_type,
-            status: cItem.containers.status,
-          });
-        }
-      });
+  if (!packedMap[itemId]) {
+    packedMap[itemId] = {
+      accepted: 0,
+      rejected: 0,
+      containers: [],
+      containerDetails: [],
+    };
+  }
+
+  // Add this container's quantity to the GRN item's total
+  packedMap[itemId].accepted += accepted;
+  packedMap[itemId].rejected += rejected;
+
+  if (cItem.containers) {
+    const containerCode = cItem.containers.barcode;
+
+    packedMap[itemId].containers.push(containerCode);
+
+    packedMap[itemId].containerDetails.push({
+      container_id: cItem.container_id,
+      code: containerCode,
+
+      // This is now the actual accepted quantity
+      accepted,
+
+      rejected,
+    });
+
+    containerMap.set(cItem.containers.id, {
+      id: cItem.containers.id,
+      code: containerCode,
+      type: cItem.containers.container_type,
+      status: cItem.containers.status,
+    });
+  }
+});
 
       // Step 3: Compute totals & flatten rows per container entry for table merging
       let totalExpected = 0;
@@ -171,9 +205,21 @@ const DiscrepancySummary = forwardRef(function DiscrepancySummary(
 
       const flattenedReport = [];
 
-      (grnItemsData || []).forEach((item) => {
+      (grnItemsData || []).forEach((item, index) => {
+
+
+
+
         const poItem = item.purchase_order_items || {};
+
+
+
+
         const expected = Number(item.received_qty || 0);
+
+
+
+
         const packed = packedMap[item.id] || {
           accepted: 0,
           rejected: 0,
@@ -185,9 +231,15 @@ const DiscrepancySummary = forwardRef(function DiscrepancySummary(
         const totalRejectedQty = packed.rejected;
         const discrepancy = totalAcceptedQty - expected;
 
+
+
+
+
         totalExpected += expected;
         totalAccepted += totalAcceptedQty;
         totalRejected += totalRejectedQty;
+
+     
 
         if (discrepancy === 0) matchedCount++;
         else if (discrepancy < 0) shortageCount++;
@@ -227,7 +279,7 @@ const DiscrepancySummary = forwardRef(function DiscrepancySummary(
               total_accepted_qty: totalAcceptedQty,
               total_rejected_qty: totalRejectedQty,
               discrepancy,
-              barcode: detail.barcode,
+              barcode: detail.code,
               // Only set rowSpan on the first container row for this item group for aggregate summary columns
               rowSpan: index === 0 ? containerDetails.length : 0,
             });
@@ -236,6 +288,9 @@ const DiscrepancySummary = forwardRef(function DiscrepancySummary(
       });
 
       setSummaryData(flattenedReport);
+
+
+
       setMappedContainers(Array.from(containerMap.values()));
       setStats({
         totalExpected,
@@ -246,7 +301,7 @@ const DiscrepancySummary = forwardRef(function DiscrepancySummary(
         excessCount,
         containerCount: containerMap.size,
       });
-      console.log("Discrepancy Summary Report:", stats);
+
     } catch (err) {
       console.error("Error generating discrepancy report:", err);
       message.error(`Failed to load discrepancy summary: ${err.message}`);
@@ -256,9 +311,7 @@ const DiscrepancySummary = forwardRef(function DiscrepancySummary(
   }, [activeGrnId]);
 
 
-  // const fetchDiscrepancyReport = () => {
-  //   console.log("GRN Data:", grnId);
-  // }
+
 
 
 
@@ -283,171 +336,169 @@ const DiscrepancySummary = forwardRef(function DiscrepancySummary(
   const hasDiscrepancy = stats.shortageCount > 0 || stats.excessCount > 0;
 
   // Table columns with rowSpan integration and container-specific accepted quantities
-const columns = [
-  {
-    title: "Item Details",
-    dataIndex: "product_name",
-    key: "product_name",
+  const columns = [
+    {
+      title: "Item Details",
+      dataIndex: "product_name",
+      key: "product_name",
 
-    render: (text, record) => (
-      <div className="flex flex-col">
-        <span className="font-semibold text-slate-800">
-          {text}
-        </span>
+      render: (text, record) => (
+        <div className="flex flex-col">
+          <span className="font-semibold text-slate-800">
+            {text}
+          </span>
 
-        <span className="font-mono text-xs text-slate-500">
-          Code: {record.product_code}
-        </span>
-      </div>
-    ),
-
-    onCell: (record) => ({
-      rowSpan: record.rowSpan,
-    }),
-  },
-
-  {
-    title: "Container",
-    dataIndex: "barcode",
-    key: "barcode",
-
-    render: (code) =>
-      code ? (
-        <Tag color="blue" className="font-mono text-xs">
-          {code}
-        </Tag>
-      ) : (
-        <Tag color="default">Unassigned</Tag>
-      ),
-  },
-
-  {
-    title: "Accepted Qty",
-    dataIndex: "accepted_qty",
-    key: "accepted_qty",
-    align: "center",
-    width: 120,
-
-    render: (qty, record) => (
-      <span className="font-mono font-bold text-emerald-700">
-        {qty} {record.unit}
-      </span>
-    ),
-  },
-
-  {
-    title: "Rejected Qty",
-    dataIndex: "rejected_qty",
-    key: "rejected_qty",
-    align: "center",
-    width: 120,
-
-    render: (qty, record) => (
-      <span
-        className={`font-mono font-bold ${
-          qty > 0
-            ? "text-rose-600"
-            : "text-slate-400"
-        }`}
-      >
-        {qty} {record.unit}
-      </span>
-    ),
-  },
-
-  {
-    title: "Expected Qty",
-    dataIndex: "expected_qty",
-    key: "expected_qty",
-    align: "center",
-    width: 110,
-
-    render: (qty, record) => (
-      <span className="font-mono font-medium text-slate-600">
-        {qty} {record.unit}
-      </span>
-    ),
-
-    onCell: (record) => ({
-      rowSpan: record.rowSpan,
-    }),
-  },
-
-  {
-    title: "Discrepancy",
-    dataIndex: "discrepancy",
-    key: "discrepancy",
-    align: "center",
-    width: 120,
-
-    render: (diff, record) =>
-      diff === 0 ? (
-        <span className="font-mono font-semibold text-slate-400">
-          0
-        </span>
-      ) : (
-        <span
-          className={`font-mono font-bold ${
-            diff < 0
-              ? "text-rose-600"
-              : "text-blue-600"
-          }`}
-        >
-          {diff > 0 ? `+${diff}` : diff} {record.unit}
-        </span>
+          <span className="font-mono text-xs text-slate-500">
+            Code: {record.product_code}
+          </span>
+        </div>
       ),
 
-    onCell: (record) => ({
-      rowSpan: record.rowSpan,
-    }),
-  },
-
-  {
-    title: "Status",
-    key: "status",
-    align: "center",
-    width: 130,
-
-    render: (_, record) => {
-      const diff = record.discrepancy;
-
-      if (diff === 0) {
-        return (
-          <Tag
-            icon={<CheckCircleOutlined />}
-            color="green"
-          >
-            Matched
-          </Tag>
-        );
-      }
-
-      if (diff < 0) {
-        return (
-          <Tag
-            icon={<WarningOutlined />}
-            color="volcano"
-          >
-            Shortage
-          </Tag>
-        );
-      }
-
-      return (
-        <Tag
-          icon={<ExclamationCircleOutlined />}
-          color="blue"
-        >
-          Excess
-        </Tag>
-      );
+      onCell: (record) => ({
+        rowSpan: record.rowSpan,
+      }),
     },
 
-    onCell: (record) => ({
-      rowSpan: record.rowSpan,
-    }),
-  },
-];
+    {
+      title: "Container",
+      dataIndex: "barcode",
+      key: "barcode",
+
+      render: (code) =>
+        code ? (
+          <Tag color="blue" className="font-mono text-xs">
+            {code}
+          </Tag>
+        ) : (
+          <Tag color="default">Unassigned</Tag>
+        ),
+    },
+
+    {
+      title: "Accepted Qty",
+      dataIndex: "accepted_qty",
+      key: "accepted_qty",
+      align: "center",
+      width: 120,
+
+      render: (qty, record) => (
+        <span className="font-mono font-bold text-emerald-700">
+          {qty} {record.unit}
+        </span>
+      ),
+    },
+
+    {
+      title: "Rejected Qty",
+      dataIndex: "rejected_qty",
+      key: "rejected_qty",
+      align: "center",
+      width: 120,
+
+      render: (qty, record) => (
+        <span
+          className={`font-mono font-bold ${qty > 0
+              ? "text-rose-600"
+              : "text-slate-400"
+            }`}
+        >
+          {qty} {record.unit}
+        </span>
+      ),
+    },
+
+    {
+      title: "Expected Qty",
+      dataIndex: "expected_qty",
+      key: "expected_qty",
+      align: "center",
+      width: 110,
+
+      render: (qty, record) => (
+        <span className="font-mono font-medium text-slate-600">
+          {qty} {record.unit}
+        </span>
+      ),
+
+      onCell: (record) => ({
+        rowSpan: record.rowSpan,
+      }),
+    },
+
+    {
+      title: "Discrepancy",
+      dataIndex: "discrepancy",
+      key: "discrepancy",
+      align: "center",
+      width: 120,
+
+      render: (diff, record) =>
+        diff === 0 ? (
+          <span className="font-mono font-semibold text-slate-400">
+            0
+          </span>
+        ) : (
+          <span
+            className={`font-mono font-bold ${diff < 0
+                ? "text-rose-600"
+                : "text-blue-600"
+              }`}
+          >
+            {diff > 0 ? `+${diff}` : diff} {record.unit}
+          </span>
+        ),
+
+      onCell: (record) => ({
+        rowSpan: record.rowSpan,
+      }),
+    },
+
+    {
+      title: "Status",
+      key: "status",
+      align: "center",
+      width: 130,
+
+      render: (_, record) => {
+        const diff = record.discrepancy;
+
+        if (diff === 0) {
+          return (
+            <Tag
+              icon={<CheckCircleOutlined />}
+              color="green"
+            >
+              Matched
+            </Tag>
+          );
+        }
+
+        if (diff < 0) {
+          return (
+            <Tag
+              icon={<WarningOutlined />}
+              color="volcano"
+            >
+              Shortage
+            </Tag>
+          );
+        }
+
+        return (
+          <Tag
+            icon={<ExclamationCircleOutlined />}
+            color="blue"
+          >
+            Excess
+          </Tag>
+        );
+      },
+
+      onCell: (record) => ({
+        rowSpan: record.rowSpan,
+      }),
+    },
+  ];
 
   return (
     <div className="space-y-4">
@@ -511,8 +562,8 @@ const columns = [
                 color: "#be123c",
               },
             }}
-            
-            
+
+
           />
         </Card>
 
@@ -528,13 +579,13 @@ const columns = [
             }
             value={stats.containerCount}
             prefix={<ContainerOutlined className="mr-1 text-blue-600" />}
-             styles={{
+            styles={{
               content: {
                 fontWeight: 700,
                 color: "#1d4ed8",
               },
             }}
-           
+
           />
         </Card>
       </div>

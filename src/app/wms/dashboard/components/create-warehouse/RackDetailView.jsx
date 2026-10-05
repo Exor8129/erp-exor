@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { supabase } from "../../../../lib/supabase";
 import { Poppins } from "next/font/google";
+import { Button } from "antd";
 
 const poppins = Poppins({
   weight: ["100", "200", "300", "400", "500", "600", "700", "800", "900"],
@@ -21,7 +22,7 @@ const WarehouseCanvas = ({
   const [warehouseInfo, setWarehouseInfo] = useState({ name: "", code: "" });
   const [tierInfo, setTierInfo] = useState({ name: "", tier_number: "" });
   const [rackLevels, setRackLevels] = useState([]);
-  const [storedContainers, setStoredContainers] = useState([]);
+  const [containersByLevel, setContainersByLevel] = useState({});
   const [loading, setLoading] = useState(false);
 
   // Modal & Creation State
@@ -29,57 +30,43 @@ const WarehouseCanvas = ({
   const [isCreating, setIsCreating] = useState(false);
 
   const rackLabel = item?.metadata?.custom_label_id || item?.id || "R1";
-  const rackDbId = item?.dbId || item?.id;
+  const rackDbId = item?.rack_id || item?.dbId || item?.id;
 
   useEffect(() => {
     let isMounted = true;
 
-    const fetchDetails = async () => {
+    const loadLevelsAndContainers = async () => {
       if (!rackDbId) return;
       setLoading(true);
 
       try {
-        const [whRes, tierRes, levelsRes, containersRes] = await Promise.all([
+        const [whRes, tierRes, levelsRes] = await Promise.all([
           item?.warehouse_id
             ? supabase
                 .schema("wms")
                 .from("warehouses")
                 .select("name, code")
                 .eq("id", item.warehouse_id)
-                .single()
+                .maybeSingle()
             : Promise.resolve({ data: null }),
+
           item?.tier_id
             ? supabase
                 .schema("wms")
                 .from("warehouse_tiers")
                 .select("name, tier_number")
                 .eq("id", item.tier_id)
-                .single()
+                .maybeSingle()
             : Promise.resolve({ data: null }),
-          supabase
-            .schema("wms")
-            .from("rack_levels")
-            .select("id, level_index, barcode")
-            .eq("rack_id", rackDbId)
-            .order("level_index", { ascending: true }),
-          supabase
-            .schema("purchase")
-            .from("container_locations")
-            .select(
-              `
-              id,
-              container_id,
-              rack_level_id,
-              status,
-              containers!container_id (
-                id,
-                barcode
-              )
-            `,
-            )
-            .eq("rack_id", rackDbId)
-            .eq("status", "STORED")
-            .is("removed_at", null),
+
+          Array.isArray(item?.rack_levels) && item.rack_levels.length > 0
+            ? Promise.resolve({ data: item.rack_levels })
+            : supabase
+                .schema("wms")
+                .from("rack_levels")
+                .select("id, rack_id, level_index, barcode")
+                .eq("rack_id", rackDbId)
+                .order("level_index", { ascending: true }),
         ]);
 
         if (!isMounted) return;
@@ -87,27 +74,75 @@ const WarehouseCanvas = ({
         if (whRes.data) setWarehouseInfo(whRes.data);
         if (tierRes.data) setTierInfo(tierRes.data);
 
-        const fetchedLevels = levelsRes.data || [];
-        setRackLevels(fetchedLevels);
+        const levels = (levelsRes.data || []).sort(
+          (a, b) => Number(a.level_index) - Number(b.level_index)
+        );
 
-        if (fetchedLevels.length === 0) {
+        setRackLevels(levels);
+
+        if (levels.length === 0) {
           setShowConfirmModal(true);
+          setContainersByLevel({});
+          return;
         }
 
-        if (containersRes.data) setStoredContainers(containersRes.data);
+        const levelIds = levels.map((lvl) => lvl.id).filter(Boolean);
+
+        const { data: locData, error: locError } = await supabase
+          .schema("purchase")
+          .from("container_locations")
+          .select(
+            `
+            id,
+            container_id,
+            rack_level_id,
+            status,
+            placed_at,
+            containers!container_id (
+              id,
+              barcode,
+              status
+            )
+          `
+          )
+          .in("rack_level_id", levelIds)
+          .eq("status", "STORED")
+          .is("removed_at", null);
+
+        if (locError) {
+          console.error("Error fetching container locations:", locError);
+          return;
+        }
+
+        const grouped = {};
+        levelIds.forEach((id) => {
+          grouped[id] = [];
+        });
+
+        (locData || []).forEach((row) => {
+          if (grouped[row.rack_level_id]) {
+            grouped[row.rack_level_id].push(row);
+          } else {
+            grouped[row.rack_level_id] = [row];
+          }
+        });
+
+        if (isMounted) {
+          setContainersByLevel(grouped);
+        }
       } catch (err) {
-        console.error("Error fetching location & rack details:", err);
+        console.error("Error loading warehouse canvas data:", err);
       } finally {
         if (isMounted) setLoading(false);
       }
     };
 
-    fetchDetails();
+    loadLevelsAndContainers();
 
     return () => {
       isMounted = false;
     };
-  }, [rackDbId, item?.warehouse_id, item?.tier_id]);
+  }, [rackDbId, item?.warehouse_id, item?.tier_id, JSON.stringify(item?.rack_levels)]);
 
   const handleCreateDefaultLevels = async () => {
     setIsCreating(true);
@@ -144,19 +179,28 @@ const WarehouseCanvas = ({
     }
   };
 
+  // Dimensions
   const legTopY = 30;
   const legHeight = 400;
-  const shelfHeight = 20;
+  const shelfHeight = 18;
 
-  const totalLevels = rackLevels.length > 0 ? rackLevels.length : 1;
+  const totalLevels = rackLevels.length > 0 ? rackLevels.length : 3;
   const numShelves = Math.max(0, totalLevels - 1);
-
   const totalSpaceHeight = legHeight - numShelves * shelfHeight;
   const slotHeight = totalSpaceHeight / totalLevels;
 
+  // Container configuration: capped dimensions & spacing
+  const BOX_MAX_WIDTH = 48; // Max width per container
+  const BOX_HEIGHT = 28;    // Height per container
+  const GAP_X = 5;          // Horizontal gap between containers
+  const GAP_Y = 4;          // Vertical gap between stacked rows
+  const PADDING_LEFT = 24;  // Margin from the left pillar
+
   return (
-    <div className={`relative w-full h-full flex flex-col items-center p-4 bg-gray-50 rounded-2xl overflow-auto gap-3 ${poppins.className}`}>
-      {/* Confirmation Modal Overlay */}
+    <div
+      className={`relative w-full h-full flex flex-col items-center p-4 bg-gray-50 rounded-2xl overflow-auto gap-3 ${poppins.className}`}
+    >
+      {/* Confirmation Modal */}
       {showConfirmModal && (
         <div className="absolute inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-xl border border-gray-100 p-5 max-w-sm w-full text-center space-y-4">
@@ -168,17 +212,12 @@ const WarehouseCanvas = ({
               <span className="font-semibold text-orange-600">{rackLabel}</span>{" "}
               has no levels. Auto-generate 3 default levels?
             </p>
-            <div className="text-[11px] text-gray-400 bg-gray-50 p-2 rounded border border-gray-100 font-mono">
-              Format: {warehouseInfo?.code || "WH01"}-T
-              {tierInfo?.tier_number || "1"}-R
-              {String(rackLabel).match(/\d+/)?.[0] || rackLabel}-L[1-3]
-            </div>
             <div className="flex items-center justify-center gap-3 pt-2">
               <button
                 type="button"
                 onClick={() => setShowConfirmModal(false)}
                 disabled={isCreating}
-                className="px-4 py-2 text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                className="px-4 py-2 text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg"
               >
                 Cancel
               </button>
@@ -186,7 +225,7 @@ const WarehouseCanvas = ({
                 type="button"
                 onClick={handleCreateDefaultLevels}
                 disabled={isCreating}
-                className="px-4 py-2 text-xs font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-lg shadow-sm transition-colors disabled:opacity-50"
+                className="px-4 py-2 text-xs font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-lg disabled:opacity-50"
               >
                 {isCreating ? "Creating..." : "Proceed"}
               </button>
@@ -195,7 +234,7 @@ const WarehouseCanvas = ({
         </div>
       )}
 
-      {/* Header Banner */}
+      {/* Top Banner */}
       <div className="w-full max-w-112.5 bg-white border border-gray-100 rounded-xl p-3 shadow-sm flex items-center justify-between text-xs text-gray-600">
         <div>
           <span className="rack-title">Warehouse</span>
@@ -230,6 +269,7 @@ const WarehouseCanvas = ({
         </div>
       </div>
 
+      {/* SVG Canvas */}
       <svg
         viewBox="0 0 450 450"
         width="100%"
@@ -238,10 +278,7 @@ const WarehouseCanvas = ({
         className="bg-white rounded-xl shadow-lg border border-gray-100"
       >
         <style>{`
-          text {
-            font-family: inherit;
-          }
-          
+          text { font-family: inherit; }
           .level-label {
             font-size: 10px;
             font-weight: 700;
@@ -249,7 +286,6 @@ const WarehouseCanvas = ({
             text-transform: uppercase;
             fill: #64748b;
           }
-            
           .rack-title {
             display: block;
             font-size: 10px;
@@ -258,7 +294,6 @@ const WarehouseCanvas = ({
             text-transform: uppercase;
             color: #64748b;
           }
-
           .rack-title1 {
             display: block;
             font-size: 12px;
@@ -267,55 +302,38 @@ const WarehouseCanvas = ({
             text-transform: uppercase;
             color: #000000;
           }
-
-          .container-barcode {
+          .container-text {
             font-family: monospace;
             font-weight: 700;
             fill: #ffffff;
           }
         `}</style>
 
-        {/* Level Displays and Containers */}
+        {/* Shelves & Placed Containers */}
         {rackLevels.map((lvl, index) => {
+          // Bottom-up shelf calculation
           const spaceIndexFromTop = totalLevels - 1 - index;
           const slotTopY =
             legTopY + spaceIndexFromTop * (slotHeight + shelfHeight);
           const centerY = slotTopY + slotHeight / 2;
           const labelX = leftLegX - 12;
 
-          const levelContainers = storedContainers.filter(
-            (c) => c.rack_level_id === lvl.id,
+          const levelContainers = containersByLevel[lvl.id] || [];
+
+          // Usable shelf boundaries
+          const shelfFloorY = slotTopY + slotHeight; // The exact surface of the shelf
+          const startX = leftLegX + PADDING_LEFT;
+          const availableWidth = rightLegX - 10 - startX;
+
+          // Compute how many boxes fit horizontally before wrapping to the next stacked row
+          const maxColsPerRow = Math.max(
+            1,
+            Math.floor((availableWidth + GAP_X) / (BOX_MAX_WIDTH + GAP_X))
           );
-
-          const innerLeftX = leftLegX + 22;
-          const innerRightX = rightLegX - 2;
-          const availableWidth = innerRightX - innerLeftX;
-          const availableHeight = slotHeight - 6;
-
-          const totalCount = levelContainers.length;
-
-          const cols = Math.min(
-            Math.max(Math.ceil(Math.sqrt(totalCount)), 1),
-            6,
-          );
-          const rows = Math.ceil(totalCount / cols);
-
-          const gapX = 4;
-          const gapY = 3;
-
-          const boxWidth = Math.max(
-            (availableWidth - (cols - 1) * gapX) / cols,
-            20,
-          );
-          const boxHeight = Math.min(
-            (availableHeight - (rows - 1) * gapY) / rows,
-            30,
-          );
-
-          const fontSize = Math.max(Math.min(boxHeight * 0.45, 9), 6);
 
           return (
             <g key={`level-group-${lvl.id || index}`}>
+              {/* Vertical Level Tag */}
               <text
                 x={labelX}
                 y={centerY}
@@ -327,45 +345,54 @@ const WarehouseCanvas = ({
                 LEVEL {lvl.level_index ?? index + 1}
               </text>
 
+              {/* Containers: Stacking Left -> Right, Bottom -> Top */}
               {levelContainers.map((cLoc, cIdx) => {
-                const colIdx = cIdx % cols;
-                const rowFromBottom = Math.floor(cIdx / cols);
+                const colIdx = cIdx % maxColsPerRow;
+                const rowIdx = Math.floor(cIdx / maxColsPerRow); // 0 = resting on shelf floor, 1 = stacked above
 
-                const boxX = innerLeftX + colIdx * (boxWidth + gapX);
+                // Left-to-right positioning
+                const boxX = startX + colIdx * (BOX_MAX_WIDTH + GAP_X);
+
+                // Bottom-to-top stacking: anchor to shelfFloorY and subtract row heights
                 const boxY =
-                  slotTopY +
-                  slotHeight -
-                  (rowFromBottom + 1) * boxHeight -
-                  rowFromBottom * gapY -
-                  2;
+                  shelfFloorY -
+                  (rowIdx + 1) * BOX_HEIGHT -
+                  rowIdx * GAP_Y -
+                  2; // 2px lift off shelf
 
-                const barcode = cLoc.containers?.barcode || "BOX";
+                const barcode =
+                  cLoc.containers?.barcode ||
+                  cLoc.container_id?.slice(0, 6) ||
+                  "BOX";
 
                 return (
-                  <g key={cLoc.id || cIdx}>
+                  <g key={cLoc.id || cIdx} className="cursor-pointer">
+                    <title>
+                      {`Level: ${lvl.level_index}\nBarcode: ${barcode}\nPlaced: ${
+                        cLoc.placed_at
+                          ? new Date(cLoc.placed_at).toLocaleTimeString()
+                          : "N/A"
+                      }`}
+                    </title>
                     <rect
                       x={boxX}
                       y={boxY}
-                      width={boxWidth}
-                      height={boxHeight}
+                      width={BOX_MAX_WIDTH}
+                      height={BOX_HEIGHT}
                       rx="3"
-                      fill="#3B82F6"
+                      fill="#2563EB"
                       stroke="#1D4ED8"
                       strokeWidth="1"
                     />
                     <text
-                      x={boxX + boxWidth / 2}
-                      y={boxY + boxHeight / 2}
+                      x={boxX + BOX_MAX_WIDTH / 2}
+                      y={boxY + BOX_HEIGHT / 2}
                       textAnchor="middle"
                       dominantBaseline="central"
-                      className="container-barcode select-none"
-                      style={{ fontSize: `${fontSize}px` }}
+                      className="container-text select-none pointer-events-none"
+                      style={{ fontSize: "8px" }}
                     >
-                      {boxWidth < 35
-                        ? barcode.slice(-3)
-                        : barcode.length > 7
-                          ? `${barcode.slice(0, 5)}…`
-                          : barcode}
+                      {barcode.length > 7 ? `${barcode.slice(0, 5)}…` : barcode}
                     </text>
                   </g>
                 );
@@ -382,7 +409,6 @@ const WarehouseCanvas = ({
           return (
             <rect
               key={`shelf-${index}`}
-              className="levels"
               x={shelfX}
               y={shelfY}
               width={shelfWidth}
@@ -393,7 +419,7 @@ const WarehouseCanvas = ({
           );
         })}
 
-        {/* Side Pillars */}
+        {/* Left and Right Rack Legs */}
         <rect
           x={leftLegX}
           y={legTopY}

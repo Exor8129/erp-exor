@@ -56,7 +56,7 @@ export default function PutawayBinAllocation({ grnId, grnData, onComplete }) {
   const activeGrnId = grnId || grnData?.id;
 
   // 1. Fetch Rack Levels, Container Items, and GRN Items
-// 1. Fetch Rack Levels, Container Items, and GRN Items
+  // 1. Fetch Rack Levels, Container Items, and GRN Items
   const fetchData = useCallback(async () => {
     if (!activeGrnId) return;
 
@@ -122,15 +122,22 @@ export default function PutawayBinAllocation({ grnId, grnData, onComplete }) {
         .schema("purchase")
         .from("container_items")
         .select(`
-          id,
-          container_id,
-          grn_item_id,
-          accepted_qty,
-          containers!container_id (
-            id,
-            barcode
-          )
-        `)
+    id,
+    container_id,
+    grn_item_id,
+    containers!container_id (
+      id,
+      barcode
+    ),
+    container_item_details (
+      id,
+      qty,
+      batch_number,
+      serial_number,
+      expiry_date,
+      mrp
+    )
+  `)
         .in("grn_item_id", grnItemIds);
 
       if (cError) console.warn("Container items fetch warning:", cError);
@@ -143,11 +150,17 @@ export default function PutawayBinAllocation({ grnId, grnData, onComplete }) {
         const cBarcode = ci.containers?.barcode;
         const searchBarcode = cBarcode?.toUpperCase();
 
+        const detailQty = (ci.container_item_details || []).reduce(
+          (sum, detail) => sum + Number(detail.qty || 0),
+          0
+        );
+
         const containerObj = {
           container_id: cId,
           barcode: cBarcode,
           grn_item_id: ci.grn_item_id,
-          accepted_qty: Number(ci.accepted_qty || 0),
+          accepted_qty: detailQty,
+          details: ci.container_item_details || [],
         };
 
         if (searchBarcode) {
@@ -166,7 +179,7 @@ export default function PutawayBinAllocation({ grnId, grnData, onComplete }) {
 
         if (cId && uniqueContainersObj[cId]) {
           uniqueContainersObj[cId].items.push(containerObj);
-          uniqueContainersObj[cId].totalQty += Number(ci.accepted_qty || 0);
+          uniqueContainersObj[cId].totalQty += detailQty;
         }
       });
 
@@ -311,9 +324,9 @@ export default function PutawayBinAllocation({ grnId, grnData, onComplete }) {
       */
 
       // 🔍 CONSOLE PREVIEW INSTEAD
-      
+
       console.log("Payload Being Inserted:", recordToInsert);
-      console.log("GRN:",grnData);
+      console.log("GRN:", grnData);
 
       // Mock returning data so the UI continues to function in test mode
       const mockReturnedData = {
@@ -355,7 +368,7 @@ export default function PutawayBinAllocation({ grnId, grnData, onComplete }) {
     try {
       setLoading(true);
       if (record.id) {
-        
+
         // ==============================================================
         // 🛑 REAL DATABASE DELETION COMMENTED OUT FOR TESTING
         // ==============================================================
@@ -506,13 +519,12 @@ export default function PutawayBinAllocation({ grnId, grnData, onComplete }) {
         hoverable
         size="small"
         onClick={() => handleOpenContainerDrawer(container)}
-        className={`relative transition-all duration-200 border-2 ${
-          allocated
-            ? "border-emerald-500 bg-emerald-50/20 shadow-xs"
-            : step1Scanned
+        className={`relative transition-all duration-200 border-2 ${allocated
+          ? "border-emerald-500 bg-emerald-50/20 shadow-xs"
+          : step1Scanned
             ? "border-blue-500 bg-blue-50/40 shadow-sm animate-pulse"
             : "border-slate-200 hover:border-blue-400 bg-white"
-        }`}
+          }`}
       >
         <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-2">
           <span className="font-extrabold text-slate-700 text-sm tracking-wide">
@@ -575,11 +587,10 @@ export default function PutawayBinAllocation({ grnId, grnData, onComplete }) {
       {/* SCANNING WORKFLOW STEP INDICATOR BANNER */}
       <Card
         size="small"
-        className={`border transition-all ${
-          scanStep === "SCAN_CONTAINER"
-            ? "bg-blue-50/60 border-blue-300"
-            : "bg-emerald-50/60 border-emerald-300"
-        }`}
+        className={`border transition-all ${scanStep === "SCAN_CONTAINER"
+          ? "bg-blue-50/60 border-blue-300"
+          : "bg-emerald-50/60 border-emerald-300"
+          }`}
       >
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div className="flex-1 w-full">
@@ -589,7 +600,7 @@ export default function PutawayBinAllocation({ grnId, grnData, onComplete }) {
               items={[
                 {
                   title: "Step 1: Scan Container",
-                  description: scannedContainer
+                  content: scannedContainer
                     ? `Container: ${scannedContainer.barcode}`
                     : "Scan Container Barcode",
                   icon: <InboxOutlined />,
@@ -625,9 +636,8 @@ export default function PutawayBinAllocation({ grnId, grnData, onComplete }) {
               ref={scanInputRef}
               prefix={
                 <ScanOutlined
-                  className={`text-base animate-pulse ${
-                    scanStep === "SCAN_CONTAINER" ? "text-blue-600" : "text-emerald-600"
-                  }`}
+                  className={`text-base animate-pulse ${scanStep === "SCAN_CONTAINER" ? "text-blue-600" : "text-emerald-600"
+                    }`}
                 />
               }
               placeholder={
@@ -638,11 +648,10 @@ export default function PutawayBinAllocation({ grnId, grnData, onComplete }) {
               value={scanInput}
               onChange={(e) => setScanInput(e.target.value)}
               onPressEnter={(e) => handleBarcodeScan(e.target.value)}
-              className={`font-mono bg-white shadow-xs ${
-                scanStep === "SCAN_CONTAINER"
-                  ? "border-blue-300 focus:border-blue-500"
-                  : "border-emerald-300 focus:border-emerald-500"
-              }`}
+              className={`font-mono bg-white shadow-xs ${scanStep === "SCAN_CONTAINER"
+                ? "border-blue-300 focus:border-blue-500"
+                : "border-emerald-300 focus:border-emerald-500"
+                }`}
               allowClear
               autoFocus
             />
@@ -778,7 +787,7 @@ export default function PutawayBinAllocation({ grnId, grnData, onComplete }) {
           </div>
         }
         placement="right"
-        width={450}
+        size={450}
         onClose={() => setDrawerVisible(false)}
         open={drawerVisible}
       >
