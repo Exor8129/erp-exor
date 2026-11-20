@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { MapPin, CheckCircle2, X, Send, Calendar } from "lucide-react";
+import { MapPin, CheckCircle2, X, Send, Calendar, Building2, PackageCheck } from "lucide-react";
 import { supabase } from "../../../lib/supabase"; // Adjust import path
 
 export default function UpdateLocationModal({
@@ -15,7 +15,8 @@ export default function UpdateLocationModal({
   );
   const [currentLocation, setCurrentLocation] = useState("");
   const [remarks, setRemarks] = useState("");
-  const [reachedCalicut, setReachedCalicut] = useState(false);
+  // Replaced boolean with a status selector: "in_transit" | "in_transit" | "at_destination"
+  const [shipmentStatus, setShipmentStatus] = useState("in_transit");
   const [saving, setSaving] = useState(false);
 
   if (!isOpen) return null;
@@ -48,7 +49,7 @@ export default function UpdateLocationModal({
         return;
       }
 
-      // 2. Resolve transporter_id (Priority: shipment table -> po prop -> lookup by name)
+      // 2. Resolve transporter_id
       let resolvedTransporterId =
         shipment.transporter_id || po.transporter_id || null;
 
@@ -74,11 +75,10 @@ export default function UpdateLocationModal({
         }
       }
 
-      const status = reachedCalicut
-        ? "at_destination"
-        : po.status || "in_transit";
+      // Determine final status based on selected milestone
+      const status = shipmentStatus; // "in_transit", "in_transit", or "at_destination"
 
-      // 3. Prepare payload with transporter_id included
+      // 3. Prepare payload for tracking events
       const payload = {
         shipment_id: shipment.id,
         transporter_id: resolvedTransporterId,
@@ -89,7 +89,7 @@ export default function UpdateLocationModal({
       };
 
       // 4. Insert into purchase.shipment_tracking_events
-      const { data: insertedEvent, error: insertError } = await supabase
+      const { error: insertError } = await supabase
         .schema("purchase")
         .from("shipment_tracking_events")
         .insert([payload])
@@ -111,12 +111,8 @@ export default function UpdateLocationModal({
           .eq("id", shipment.id);
       }
 
-      // 6. Update PO master status if reached destination
-      // ============================================================
-      // STEP 6: UPDATE SHIPMENT AND PO STATUS
-      // ============================================================
-
-      if (reachedCalicut) {
+      // 6. Update master tables if final destination (Warehouse Received) is reached
+      if (status === "at_destination") {
         const now = new Date().toISOString();
 
         // 6A. Update shipment status
@@ -130,9 +126,7 @@ export default function UpdateLocationModal({
           })
           .eq("id", shipment.id);
 
-        if (shipmentUpdateError) {
-          throw shipmentUpdateError;
-        }
+        if (shipmentUpdateError) throw shipmentUpdateError;
 
         // 6B. Update purchase order status
         const { error: poUpdateError } = await supabase
@@ -144,15 +138,20 @@ export default function UpdateLocationModal({
           })
           .eq("id", po.id);
 
-        if (poUpdateError) {
-          throw poUpdateError;
-        }
+        if (poUpdateError) throw poUpdateError;
+      } else if (status === "in_transit") {
+        // Optional: Update shipment_status to indicate it's at the city hub
+        await supabase
+          .schema("purchase")
+          .from("shipments")
+          .update({ shipment_status: "in_transit", updated_at: new Date().toISOString() })
+          .eq("id", shipment.id);
       }
 
       // Reset form & notify parent with updated data
       setCurrentLocation("");
       setRemarks("");
-      setReachedCalicut(false);
+      setShipmentStatus("in_transit");
       setEventDate(new Date().toISOString().split("T")[0]);
 
       if (onSuccess) {
@@ -198,9 +197,8 @@ export default function UpdateLocationModal({
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
           {/* Update Date Field */}
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
-              <Calendar size={13} className="text-slate-500" /> Date of Update /
-              Event *
+            <label className="flex items-center gap-1 text-xs font-semibold text-slate-700 mb-1">
+              <Calendar size={13} className="text-slate-500" /> Date of Update / Event *
             </label>
             <input
               type="date"
@@ -218,11 +216,69 @@ export default function UpdateLocationModal({
             <input
               type="text"
               required
-              placeholder="e.g. Salem, Bangalore, Coimbatore"
+              placeholder="e.g. Calicut Courier Hub, Vengeri, etc."
               value={currentLocation}
               onChange={(e) => setCurrentLocation(e.target.value)}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-800 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
+          </div>
+
+          {/* Shipment Milestone Selection */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+              Shipment Stage / Milestone *
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => setShipmentStatus("in_transit")}
+                className={`flex flex-col items-center justify-center p-2.5 rounded-xl border text-center transition-all ${
+                  shipmentStatus === "in_transit"
+                    ? "border-indigo-600 bg-indigo-50/60 text-indigo-900 font-bold shadow-xs"
+                    : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 font-medium"
+                }`}
+              >
+                <MapPin size={16} className="mb-1 text-indigo-600" />
+                <span className="text-[11px]">In Transit</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShipmentStatus("in_transit");
+                  if (!currentLocation) setCurrentLocation("Calicut Hub");
+                }}
+                className={`flex flex-col items-center justify-center p-2.5 rounded-xl border text-center transition-all ${
+                  shipmentStatus === "in_transit"
+                    ? "border-amber-600 bg-amber-50/60 text-amber-900 font-bold shadow-xs"
+                    : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 font-medium"
+                }`}
+              >
+                <Building2 size={16} className="mb-1 text-amber-600" />
+                <span className="text-[11px]">At City Hub</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShipmentStatus("at_destination");
+                  if (!currentLocation) setCurrentLocation("Calicut Warehouse");
+                }}
+                className={`flex flex-col items-center justify-center p-2.5 rounded-xl border text-center transition-all ${
+                  shipmentStatus === "at_destination"
+                    ? "border-emerald-600 bg-emerald-50/60 text-emerald-900 font-bold shadow-xs"
+                    : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 font-medium"
+                }`}
+              >
+                <PackageCheck size={16} className="mb-1 text-emerald-600" />
+                <span className="text-[11px]">At Warehouse</span>
+              </button>
+            </div>
+            <p className="text-[10px] text-slate-500 mt-1.5 italic">
+              {shipmentStatus === "in_transit" && "Shipment is still moving between transit stops."}
+              {shipmentStatus === "in_transit" && "Shipment has arrived at the local courier station/hub in Calicut."}
+              {shipmentStatus === "at_destination" && "Shipment has physically arrived and been unloaded at your warehouse."}
+            </p>
           </div>
 
           <div>
@@ -231,37 +287,11 @@ export default function UpdateLocationModal({
             </label>
             <textarea
               rows={2}
-              placeholder="e.g. Expected arrival tomorrow morning..."
+              placeholder="e.g. Waiting for clearance / pickup scheduled tomorrow..."
               value={remarks}
               onChange={(e) => setRemarks(e.target.value)}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-800 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
-          </div>
-
-          {/* Calicut Destination Checkbox */}
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3">
-            <label className="flex items-center gap-2.5 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={reachedCalicut}
-                onChange={(e) => {
-                  setReachedCalicut(e.target.checked);
-                  if (e.target.checked) setCurrentLocation("Calicut");
-                }}
-                className="h-4 w-4 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500"
-              />
-              <div>
-                <span className="text-xs font-bold text-emerald-900 flex items-center gap-1">
-                  <CheckCircle2 size={14} className="text-emerald-600" />{" "}
-                  Reached Calicut
-                </span>
-                <p className="text-[10px] text-emerald-700">
-                  Marks status as{" "}
-                  <strong className="uppercase">at_destination</strong> and
-                  removes it from in-transit checks.
-                </p>
-              </div>
-            </label>
           </div>
 
           {/* Footer Actions */}

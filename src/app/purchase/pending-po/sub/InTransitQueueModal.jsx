@@ -829,7 +829,7 @@ const fetchInTransitShipments = async () => {
                       title={`#${idx + 1}: ${shipment.po_number} (${shipment.lr}) - ${
                         isUpdated ? "Logged Today" : "Pending"
                       }`}
-                      className={`h-5 min-w-[20px] px-1 rounded-md text-[9px] font-mono flex items-center justify-center transition-all cursor-pointer ${dotColor}`}
+                      className={`h-5 min-w-5 px-1 rounded-md text-[9px] font-mono flex items-center justify-center transition-all cursor-pointer ${dotColor}`}
                     >
                       {idx + 1}
                     </button>
@@ -1019,7 +1019,7 @@ const fetchInTransitShipments = async () => {
                   <div className="flex items-center gap-1.5">
                     {currentShipment.updatedToday ? (
                       <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-300">
-                        <Check size={12} className="stroke-[3]" /> LOGGED TODAY
+                        <Check size={12} className="stroke-3" /> LOGGED TODAY
                       </span>
                     ) : (
                       <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-[10px] font-bold text-amber-700 border border-amber-300">
@@ -1110,7 +1110,7 @@ const fetchInTransitShipments = async () => {
                   <button
                     onClick={handleOpenUpdate}
                     disabled={loading || Boolean(activeAction)}
-                    className={`flex min-w-[170px] flex-1 items-center justify-center gap-2 rounded-lg px-4 py-2 text-xs font-bold shadow-sm transition-all disabled:opacity-70 disabled:pointer-events-none cursor-pointer ${
+                    className={`flex min-w-42.5 flex-1 items-center justify-center gap-2 rounded-lg px-4 py-2 text-xs font-bold shadow-sm transition-all disabled:opacity-70 disabled:pointer-events-none cursor-pointer ${
                       currentShipment.updatedToday
                         ? "bg-emerald-600 text-white hover:bg-emerald-700"
                         : "bg-indigo-600 text-white hover:bg-indigo-700"

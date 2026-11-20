@@ -1,405 +1,1155 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
+import { supabase } from "../../../lib/supabase";
 
-export default function CreateWarehouse() {
-  // Section 1 State: Metadata
-  const [formData, setFormData] = useState({
-    name: "",
-    code: "",
-    location: "",
-    capacity: "",
-    type: "Distribution Center",
+import {
+  Modal,
+  Input,
+  Select,
+  Button,
+  Form,
+  Typography,
+  Divider,
+  message,
+  Popconfirm,
+  Table,
+  Checkbox,
+  Drawer,
+  Space,
+  Tag,
+  Tooltip,
+} from "antd";
+
+import {
+  PlusOutlined,
+  ShopOutlined,
+  DeleteOutlined,
+  CheckOutlined,
+  CloseOutlined,
+  EditOutlined,
+  UnorderedListOutlined,
+  SettingOutlined,
+} from "@ant-design/icons";
+
+import MapCanvas from "../components/create-warehouse/MapCanvas";
+
+const { Option } = Select;
+
+export default function WarehouseDesigner() {
+  const [warehouses, setWarehouses] = useState([]);
+  const [selectedWarehouse, setSelectedWarehouse] = useState(null);
+  const [createModal, setCreateModal] = useState(false);
+  const [isEditWarehouseModal, setIsEditWarehouseModal] = useState(false);
+  const [form] = Form.useForm();
+
+  const [selectedType, setSelectedType] = useState("rack");
+  const [elements, setElements] = useState([]);
+
+  // Drawer to manage all elements in current layout
+  const [elementDrawerOpen, setElementDrawerOpen] = useState(false);
+
+  // Tracks database primary key of selected row
+  const [editingElementId, setEditingElementId] = useState(null);
+
+  const [elementData, setElementData] = useState({
+    id: "",
+    x: 100,
+    y: 100,
+    status: "vacant",
+    orientation: "vertical",
+    rotation: 0,
+    textX: 0,
+    color: "#CDE6FE",
   });
 
-  // Section 2 State: Grid Definition & Global Aspect Ratio
-  const [gridConfig, setGridConfig] = useState({
-    rows: 8,
-    cols: 10,
-  });
-  
-  // Toggles the aspect ratio of the cells globally
-  const [cellOrientation, setCellOrientation] = useState("landscape");
+  const [tiers, setTiers] = useState([]);
+  const [selectedTier, setSelectedTier] = useState(null);
 
-  // Selection states for click-and-drag mechanics
-  const [isDragging, setIsDragging] = useState(false);
-  const [selectionStart, setSelectionStart] = useState(null);
-  const [selectionEnd, setSelectionEnd] = useState(null);
+  const [binManagerOpen, setBinManagerOpen] = useState(false);
+  const [binStatus, setBinStatus] = useState({});
+  const [binRows, setBinRows] = useState([]);
 
-  // Cell Types: "vacant" | "rack" | "floor-stack" | "aisle"
-  const [singleCells, setSingleCells] = useState({});
-  const [mergedAisles, setMergedAisles] = useState([]);
-
-  // Reset structures when dimensions alter drastically
+  // LOAD WAREHOUSES
   useEffect(() => {
-    setSingleCells({});
-    setMergedAisles([]);
-  }, [gridConfig.rows, gridConfig.cols]);
+    loadWarehouses();
+  }, []);
 
-  // Dynamic Bounding Box Math Helper for Drag Selection
-  const isCellSelected = (r, c) => {
-    if (!selectionStart || !selectionEnd) return false;
-    const minR = Math.min(selectionStart.r, selectionEnd.r);
-    const maxR = Math.max(selectionStart.r, selectionEnd.r);
-    const minC = Math.min(selectionStart.c, selectionEnd.c);
-    const maxC = Math.max(selectionStart.c, selectionEnd.c);
-    return r >= minR && r <= maxR && c >= minC && c <= maxC;
+  const loadWarehouses = async () => {
+    const { data, error } = await supabase
+      .schema("wms")
+      .from("warehouses")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      message.error(error.message);
+      return;
+    }
+    setWarehouses(data);
   };
 
-  // Drag Event Boundaries Management
-  const handleCellMouseDown = (r, c) => {
-    setIsDragging(true);
-    setSelectionStart({ r, c });
-    setSelectionEnd({ r, c });
+  const loadTiers = async (warehouseId) => {
+    const { data } = await supabase
+      .schema("wms")
+      .from("warehouse_tiers")
+      .select("*")
+      .eq("warehouse_id", warehouseId)
+      .order("tier_number", { ascending: true });
+    setTiers(data || []);
   };
 
-  const handleCellMouseEnter = (r, c) => {
-    if (!isDragging) return;
-    setSelectionEnd({ r, c });
+  const getNextWarehouseCode = async () => {
+    const { data, error } = await supabase
+      .schema("wms")
+      .from("warehouses")
+      .select("code")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error || !data) {
+      return "WH01";
+    }
+    const lastNumber = parseInt(data.code.replace("WH", ""), 10);
+    const nextNumber = isNaN(lastNumber) ? 1 : lastNumber + 1;
+    return `WH${String(nextNumber).padStart(2, "0")}`;
   };
 
-  const handleMouseUpGlobal = () => {
-    setIsDragging(false);
+  // CREATE OR UPDATE WAREHOUSE
+  const handleSaveWarehouse = async (values) => {
+    if (isEditWarehouseModal && selectedWarehouse) {
+      // UPDATE EXISTING WAREHOUSE
+      const { data: updatedWh, error } = await supabase
+        .schema("wms")
+        .from("warehouses")
+        .update({
+          name: values.name,
+          location: values.location,
+          length: values.length,
+          width: values.width,
+          height: values.height,
+        })
+        .eq("id", selectedWarehouse.id)
+        .select()
+        .single();
+
+      if (error) {
+        message.error(error.message);
+        return;
+      }
+
+      setSelectedWarehouse(updatedWh);
+      setWarehouses((prev) =>
+        prev.map((w) => (w.id === updatedWh.id ? updatedWh : w))
+      );
+      setCreateModal(false);
+      form.resetFields();
+      message.success("Warehouse updated successfully");
+    } else {
+      // CREATE NEW WAREHOUSE
+      const { data: warehouse, error } = await supabase
+        .schema("wms")
+        .from("warehouses")
+        .insert({
+          name: values.name,
+          code: values.code,
+          location: values.location,
+          length: values.length,
+          width: values.width,
+          height: values.height,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        message.error(error.message);
+        return;
+      }
+
+      const tierRows = [];
+      for (let i = 1; i <= (values.tiers || 1); i++) {
+        tierRows.push({
+          warehouse_id: warehouse.id,
+          tier_number: i,
+          name: `Tier ${i}`,
+        });
+      }
+
+      const { error: tierError } = await supabase
+        .schema("wms")
+        .from("warehouse_tiers")
+        .insert(tierRows);
+
+      if (tierError) {
+        message.error(tierError.message);
+        return;
+      }
+
+      setSelectedWarehouse(warehouse);
+      setWarehouses((prev) => [warehouse, ...prev]);
+      await loadTiers(warehouse.id);
+
+      const { data: tierData } = await supabase
+        .schema("wms")
+        .from("warehouse_tiers")
+        .select("*")
+        .eq("warehouse_id", warehouse.id)
+        .order("tier_number");
+
+      if (tierData?.length) {
+        setTiers(tierData);
+        setSelectedTier(tierData[0]);
+        await loadElements(tierData[0].id);
+      }
+
+      setCreateModal(false);
+      form.resetFields();
+      message.success("Warehouse created");
+    }
   };
 
-  useEffect(() => {
-    window.addEventListener("mouseup", handleMouseUpGlobal);
-    return () => window.removeEventListener("mouseup", handleMouseUpGlobal);
-  }, [isDragging]);
+  // HANDLER FOR REALTIME LOCAL CHANGES
+  const handleFieldChange = (fieldName, value) => {
+    const updatedData = { ...elementData, [fieldName]: value };
+    setElementData(updatedData);
 
-  // Clears out overlapping items when a new assignment overrides coordinates
-  const clearZoneOverlaps = (r, c, updatedAisles) => {
-    return updatedAisles.filter(aisle => {
-      const inRowBound = (r >= aisle.origin.r && r < aisle.origin.r + aisle.size.rSpan);
-      const inColBound = (c >= aisle.origin.c && c < aisle.origin.c + aisle.size.cSpan);
-      return !(inRowBound && inColBound);
-    });
+    if (editingElementId) {
+      setElements((prevElements) =>
+        prevElements.map((el) => {
+          if (el.id !== editingElementId) return el;
+
+          const currentType = fieldName === "type" ? value : el.type;
+          let width = el.width;
+          let height = el.height;
+          if (fieldName === "type") {
+            if (value === "rack") {
+              width = 40;
+              height = 100;
+            } else if (value === "s-rack") {
+              width = 30;
+              height = 65;
+            } else if (value === "fsa") {
+              width = 50;
+              height = 55;
+            } else {
+              width = 40;
+              height = 40;
+            }
+          }
+
+          return {
+            ...el,
+            type: currentType,
+            width,
+            height,
+            x: fieldName === "x" ? Number(value) || 0 : el.x,
+            y: fieldName === "y" ? Number(value) || 0 : el.y,
+            metadata: {
+              ...el.metadata,
+              custom_label_id:
+                fieldName === "id" ? value : el.metadata?.custom_label_id,
+              status: fieldName === "status" ? value : el.metadata?.status,
+              orientation:
+                fieldName === "orientation" ? value : el.metadata?.orientation,
+              color: fieldName === "color" ? value : el.metadata?.color,
+              rotation:
+                fieldName === "rotation"
+                  ? Number(value) || 0
+                  : el.metadata?.rotation,
+              textX:
+                fieldName === "textX"
+                  ? Number(value) || 0
+                  : el.metadata?.textX,
+            },
+          };
+        })
+      );
+    }
   };
 
-  // Convert the current selected group of cells to standard unmerged types
-  const applyStandardZoneToSelection = (type) => {
-    if (!selectionStart || !selectionEnd) return;
-    
-    const minR = Math.min(selectionStart.r, selectionEnd.r);
-    const maxR = Math.max(selectionStart.r, selectionEnd.r);
-    const minC = Math.min(selectionStart.c, selectionEnd.c);
-    const maxC = Math.max(selectionStart.c, selectionEnd.c);
+  // ADD NEW ELEMENT
+  const addElement = async () => {
+    if (!selectedWarehouse || !selectedTier) {
+      message.warning("Select warehouse and tier");
+      return;
+    }
 
-    const newCells = { ...singleCells };
-    let newAisles = [...mergedAisles];
+    let customLabel = elementData.id?.trim();
 
-    for (let r = minR; r <= maxR; r++) {
-      for (let c = minC; c <= maxC; c++) {
-        const key = `${r}-${c}`;
-        newAisles = clearZoneOverlaps(r, c, newAisles);
-        if (type === "vacant") {
-          delete newCells[key];
-        } else {
-          newCells[key] = type;
+    if (
+      !customLabel ||
+      customLabel.startsWith("OBJ-") ||
+      customLabel.startsWith("R") ||
+      customLabel.startsWith("SR") ||
+      customLabel.startsWith("FSA")
+    ) {
+      let prefix = "R";
+      if (selectedType === "s-rack") prefix = "SR";
+      if (selectedType === "fsa") prefix = "FSA";
+      if (selectedType === "entry") prefix = "Entry";
+      if (selectedType === "object") prefix = "OBJ";
+
+      const existingWarehouseElements = elements.filter(
+        (el) =>
+          el.warehouse_id === selectedWarehouse.id && el.type === selectedType
+      );
+
+      let maxNum = 0;
+      existingWarehouseElements.forEach((el) => {
+        const labelStr = el.metadata?.custom_label_id || "";
+        if (labelStr.startsWith(prefix)) {
+          const numPart = parseInt(labelStr.replace(prefix, ""), 10);
+          if (!isNaN(numPart) && numPart > maxNum) {
+            maxNum = numPart;
+          }
         }
-      }
+      });
+
+      customLabel = `${prefix}${maxNum + 1}`;
     }
 
-    setSingleCells(newCells);
-    setMergedAisles(newAisles);
-    clearSelection();
-  };
-
-  // Specialized dynamic block merge action ONLY available for Aisle blocks
-  const mergeSelectionToAisle = () => {
-    if (!selectionStart || !selectionEnd) return;
-
-    const minR = Math.min(selectionStart.r, selectionEnd.r);
-    const maxR = Math.max(selectionStart.r, selectionEnd.r);
-    const minC = Math.min(selectionStart.c, selectionEnd.c);
-    const maxC = Math.max(selectionStart.c, selectionEnd.c);
-
-    for (let r = minR; r <= maxR; r++) {
-      for (let c = minC; c <= maxC; c++) {
-        const currentZone = singleCells[`${r}-${c}`];
-        if (currentZone === "rack" || currentZone === "floor-stack") {
-          alert("Invalid Merge: You can only merge empty cells or individual Aisle spaces into a block Aisle.");
-          return;
-        }
-      }
-    }
-
-    const rSpan = (maxR - minR) + 1;
-    const cSpan = (maxC - minC) + 1;
-
-    const newCells = { ...singleCells };
-    let newAisles = [...mergedAisles];
-
-    for (let r = minR; r <= maxR; r++) {
-      for (let c = minC; c <= maxC; c++) {
-        newAisles = clearZoneOverlaps(r, c, newAisles);
-        delete newCells[`${r}-${c}`];
-      }
-    }
-
-    newAisles.push({
-      id: `aisle-${Date.now()}`,
-      origin: { r: minR, c: minC },
-      size: { rSpan, cSpan }
-    });
-
-    setSingleCells(newCells);
-    setMergedAisles(newAisles);
-    clearSelection();
-  };
-
-  const clearSelection = () => {
-    setSelectionStart(null);
-    setSelectionEnd(null);
-  };
-
-  // Process visual placements
-  const mergedMap = {};
-  mergedAisles.forEach((aisle) => {
-    for (let r = aisle.origin.r; r < aisle.origin.r + aisle.size.rSpan; r++) {
-      for (let c = aisle.origin.c; c < aisle.origin.c + aisle.size.cSpan; c++) {
-        mergedMap[`${r}-${c}`] = {
-          isOrigin: r === aisle.origin.r && c === aisle.origin.c,
-          data: aisle,
-        };
-      }
-    }
-  });
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    const finalPayload = {
-      ...formData,
-      layout: {
-        dimensions: gridConfig,
-        cellOrientation: cellOrientation,
-        singleCells: Object.keys(singleCells).map(key => {
-          const [r, c] = key.split("-").map(Number);
-          return { row: r, col: c, type: singleCells[key] };
-        }),
-        mergedAisles: mergedAisles,
-      },
+    const basePayload = {
+      warehouse_id: selectedWarehouse.id,
+      tier_id: selectedTier.id,
+      type: selectedType,
+      x: Number(elementData.x) || 0,
+      y: Number(elementData.y) || 0,
     };
-    console.log("Submitting Layout Package:", finalPayload);
+
+    if (selectedType === "rack") {
+      basePayload.width = 40;
+      basePayload.height = 100;
+    } else if (selectedType === "s-rack") {
+      basePayload.width = 30;
+      basePayload.height = 65;
+    } else if (selectedType === "fsa") {
+      basePayload.width = 50;
+      basePayload.height = 55;
+    } else {
+      basePayload.width = 40;
+      basePayload.height = 40;
+    }
+
+    basePayload.metadata = {
+      custom_label_id: customLabel,
+      status: ["rack", "s-rack", "fsa", "object"].includes(selectedType)
+        ? elementData.status
+        : "vacant",
+      orientation: ["rack", "s-rack", "fsa", "object"].includes(selectedType)
+        ? elementData.orientation
+        : "vertical",
+      color: selectedType === "object" ? elementData.color : null,
+      rotation: selectedType === "entry" ? Number(elementData.rotation) : 0,
+      textX: selectedType === "entry" ? Number(elementData.textX) : 0,
+    };
+
+    const { data, error } = await supabase
+      .schema("wms")
+      .from("warehouse_elements")
+      .insert(basePayload)
+      .select()
+      .single();
+
+    if (error) {
+      console.error(error);
+      message.error(`Database rejection: ${error.message}`);
+      return;
+    }
+
+    setElements((prev) => [...prev, data]);
+    clearFormState();
+    message.success(`Layout element ${customLabel} added successfully!`);
   };
 
-  const gridRowsArray = Array.from({ length: gridConfig.rows });
-  const gridColsArray = Array.from({ length: gridConfig.cols });
+  // SAVE EDITING
+  const finishEditingElement = async () => {
+    if (!editingElementId) return;
 
-  // Dynamic aspect ratio tracking rule for gapless container grids
-  const cellAspectRatio = cellOrientation === "landscape" ? "aspect-video" : "aspect-[3/4]";
+    const locallyModifiedElement = elements.find(
+      (el) => el.id === editingElementId
+    );
+    if (!locallyModifiedElement) return;
+
+    const { error } = await supabase
+      .schema("wms")
+      .from("warehouse_elements")
+      .update({
+        type: locallyModifiedElement.type,
+        x: locallyModifiedElement.x,
+        y: locallyModifiedElement.y,
+        width: locallyModifiedElement.width,
+        height: locallyModifiedElement.height,
+        metadata: locallyModifiedElement.metadata,
+      })
+      .eq("id", editingElementId);
+
+    if (error) {
+      message.error(`Failed to save adjustments: ${error.message}`);
+      return;
+    }
+
+    clearFormState();
+    message.success("Layout adjustments saved securely!");
+  };
+
+  // DELETE ELEMENT
+  const deleteElement = async (targetId) => {
+    const idToDelete = targetId || editingElementId;
+    if (!idToDelete) return;
+
+    const { error } = await supabase
+      .schema("wms")
+      .from("warehouse_elements")
+      .delete()
+      .eq("id", idToDelete);
+
+    if (error) {
+      message.error(`Failed to delete element: ${error.message}`);
+      return;
+    }
+
+    setElements((prev) => prev.filter((el) => el.id !== idToDelete));
+    if (editingElementId === idToDelete) {
+      clearFormState();
+    }
+    message.success("Layout element removed.");
+  };
+
+  const loadElements = async (tierId) => {
+    const { data, error } = await supabase
+      .schema("wms")
+      .from("warehouse_elements")
+      .select("*")
+      .eq("tier_id", tierId);
+
+    if (error) {
+      message.error(error.message);
+      return;
+    }
+    setElements(data || []);
+  };
+
+  // SELECT ELEMENT FOR EDITING
+  const handleElementSelect = (item) => {
+    if (!item) {
+      clearFormState();
+      return;
+    }
+
+    const targetLabel = typeof item === "object" ? item.id : item;
+
+    const foundElement = elements.find(
+      (el) =>
+        el.metadata?.custom_label_id === targetLabel || el.id === targetLabel
+    );
+
+    if (!foundElement) {
+      message.error("Could not synchronize element with database");
+      return;
+    }
+
+    setEditingElementId(foundElement.id);
+    setSelectedType(foundElement.type);
+
+    setElementData({
+      id: foundElement.metadata?.custom_label_id || foundElement.id,
+      x: foundElement.x,
+      y: foundElement.y,
+      status: foundElement.metadata?.status || "vacant",
+      orientation: foundElement.metadata?.orientation || "vertical",
+      rotation: foundElement.metadata?.rotation || 0,
+      textX: foundElement.metadata?.textX || 0,
+      color: foundElement.metadata?.color || "#CDE6FE",
+    });
+  };
+
+  const handleCancelEditing = async () => {
+    if (!editingElementId) return;
+
+    if (selectedTier) {
+      await loadElements(selectedTier.id);
+    }
+    clearFormState();
+  };
+
+  const clearFormState = () => {
+    setEditingElementId(null);
+    setElementData({
+      id: "",
+      x: 100,
+      y: 100,
+      status: "vacant",
+      orientation: "vertical",
+      rotation: 0,
+      textX: 0,
+      color: "#CDE6FE",
+    });
+  };
+
+  const loadStorageLocations = () => {
+    const rows = elements
+      .filter((el) => ["rack", "s-rack", "fsa"].includes(el.type))
+      .map((el) => {
+        let defaultLevels = 1;
+        let defaultBins = 1;
+
+        if (el.type === "rack") {
+          defaultLevels = 3;
+          defaultBins = 3;
+        }
+
+        if (el.type === "s-rack") {
+          defaultLevels = 4;
+          defaultBins = 3;
+        }
+
+        return {
+          key: el.id,
+          id: el.id,
+          label: el.metadata?.custom_label_id,
+          type: el.type,
+          levels: defaultLevels,
+          binsPerLevel: defaultBins,
+          selected: false,
+          binsCreated: !!binStatus[el.id],
+        };
+      });
+
+    setBinRows(rows);
+  };
+
+  const updateRow = (id, field, value) => {
+    setBinRows((prev) =>
+      prev.map((row) =>
+        row.id === id ? { ...row, [field]: value } : row
+      )
+    );
+  };
+
+  const generateAndSaveBins = async () => {
+    const selected = binRows.filter((r) => r.selected);
+
+    if (!selected.length) {
+      message.warning("Select at least one location");
+      return;
+    }
+
+    let barcode = 1;
+    const allBins = [];
+
+    selected.forEach((row) => {
+      let runningBin = 1;
+
+      for (let level = 1; level <= row.levels; level++) {
+        for (let i = 1; i <= row.binsPerLevel; i++) {
+          const address =
+            `${selectedWarehouse.code}` +
+            `-T${String(selectedTier.tier_number).padStart(2, "0")}` +
+            `-${row.label}` +
+            `-L${level}` +
+            `-B${runningBin}`;
+
+          allBins.push({
+            warehouse_id: selectedWarehouse.id,
+            tier_id: selectedTier.id,
+            element_id: row.id,
+            level_no: level,
+            bin_no: runningBin,
+            address,
+            barcode: `BIN${String(barcode).padStart(8, "0")}`,
+            barcode_value: address,
+            status: "empty",
+          });
+
+          barcode++;
+          runningBin++;
+        }
+      }
+    });
+
+    const { error } = await supabase
+      .schema("wms")
+      .from("location_bins")
+      .insert(allBins);
+
+    if (error) {
+      message.error(error.message);
+      return;
+    }
+
+    message.success(`${allBins.length} bins created`);
+    setBinManagerOpen(false);
+  };
+
+  const canGenerateBins = () => {
+    const selected = binRows.filter((r) => r.selected);
+    if (selected.length === 0) return false;
+    return !selected.every((row) => row.binsCreated);
+  };
+
+  const checkTierBins = async (tierId) => {
+    const { data, error } = await supabase
+      .schema("wms")
+      .from("location_bins")
+      .select("element_id")
+      .eq("tier_id", tierId);
+
+    if (error) {
+      message.error(error.message);
+      return;
+    }
+
+    const status = {};
+    data.forEach((bin) => {
+      status[bin.element_id] = true;
+    });
+
+    setBinStatus(status);
+  };
 
   return (
-    <div className="max-w-7xl mx-auto py-6 px-4">
-      {/* Page Title */}
-      <div className="border-b border-slate-100 pb-5 mb-8">
-        <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-          Create New Warehouse Layout
-        </h1>
-        <p className="text-sm text-slate-500 mt-1">
-          Register warehouse details and visually map zones using multi-cell selection.
-        </p>
+    <div className="w-full h-screen bg-gray-100 flex flex-col overflow-hidden">
+      {/* TOP HEADER SECTION */}
+      <div className="h-17.5 bg-white border-b px-6 flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-2">
+          <Typography.Title level={4} style={{ margin: 0 }}>
+            <ShopOutlined />
+            &nbsp; Warehouse Designer
+          </Typography.Title>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Select
+            className="w-64"
+            placeholder="Select Warehouse"
+            value={selectedWarehouse?.id}
+            onChange={(id) => {
+              const wh = warehouses.find((x) => x.id === id);
+              setSelectedWarehouse(wh);
+              loadTiers(wh.id);
+              setSelectedTier(null);
+              setElements([]);
+              clearFormState();
+            }}
+          >
+            {warehouses.map((wh) => (
+              <Option key={wh.id} value={wh.id}>
+                {wh.name} ({wh.code})
+              </Option>
+            ))}
+          </Select>
+
+          {selectedWarehouse && (
+            <Tooltip title="Edit Warehouse Settings">
+              <Button
+                icon={<SettingOutlined />}
+                onClick={() => {
+                  setIsEditWarehouseModal(true);
+                  form.setFieldsValue({
+                    name: selectedWarehouse.name,
+                    code: selectedWarehouse.code,
+                    location: selectedWarehouse.location,
+                    length: selectedWarehouse.length,
+                    width: selectedWarehouse.width,
+                    height: selectedWarehouse.height,
+                  });
+                  setCreateModal(true);
+                }}
+              />
+            </Tooltip>
+          )}
+
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={async () => {
+              setIsEditWarehouseModal(false);
+              const nextCode = await getNextWarehouseCode();
+              form.resetFields();
+              form.setFieldsValue({ code: nextCode, tiers: 1 });
+              setCreateModal(true);
+            }}
+          >
+            Create Warehouse
+          </Button>
+
+          <Button
+            icon={<UnorderedListOutlined />}
+            disabled={!selectedTier}
+            onClick={() => setElementDrawerOpen(true)}
+          >
+            Layout Elements ({elements.length})
+          </Button>
+
+          <Button
+            type="primary"
+            disabled={!selectedTier}
+            onClick={() => {
+              loadStorageLocations();
+              setBinManagerOpen(true);
+            }}
+          >
+            Bin Manager
+          </Button>
+        </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-8">
-        {/* SECTION 1: FACILITY PROFILE */}
-        <section className="bg-white border border-slate-200 p-6 rounded-2xl shadow-xs">
-          <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-600">
-              1
-            </span>
-            Facility Profile
-          </h2>
-
-          <div className="grid grid-cols-1 gap-y-4 gap-x-4 sm:grid-cols-2">
-            <div className="sm:col-span-2">
-              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Warehouse Name</label>
-              <input
-                type="text" required placeholder="Central Logistics Hub"
-                value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
-              />
+      {/* MAIN DESIGN AREA */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* LEFT SIDEBAR PANEL */}
+        <div className="w-70 shrink-0 border-r bg-white p-4 flex flex-col gap-4 overflow-y-auto">
+          <div>
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+              Current Workspace
             </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Facility Code</label>
-              <input
-                type="text" required placeholder="WH-EAST-01"
-                value={formData.code} onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-                className="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Total Capacity (m³)</label>
-              <input
-                type="number" required placeholder="50000"
-                value={formData.capacity} onChange={(e) => setFormData({ ...formData, capacity: e.target.value })}
-                className="w-full px-4 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
-              />
-            </div>
-          </div>
-        </section>
-
-        {/* SECTION 2: INTERACTIVE DESIGNER */}
-        <section className="bg-white border border-slate-200 p-6 rounded-2xl shadow-xs">
-          <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-600">
-              2
-            </span>
-            Layout Canvas Configuration
-          </h2>
-
-          {/* Configuration and Controls */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6 p-4 bg-slate-50 rounded-xl border border-slate-100">
-            <div className="flex flex-wrap gap-6 items-end">
-              <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Grid Dimensions</label>
-                <div className="flex items-center gap-2 bg-white p-1 rounded-lg border border-slate-200">
-                  <input
-                    type="number" min={4} max={25} value={gridConfig.rows}
-                    onChange={(e) => setGridConfig({ ...gridConfig, rows: Math.max(2, parseInt(e.target.value) || 2) })}
-                    className="w-16 text-center border-none focus:outline-none text-sm font-semibold"
-                  />
-                  <span className="text-slate-400 text-xs">×</span>
-                  <input
-                    type="number" min={4} max={25} value={gridConfig.cols}
-                    onChange={(e) => setGridConfig({ ...gridConfig, cols: Math.max(2, parseInt(e.target.value) || 2) })}
-                    className="w-16 text-center border-none focus:outline-none text-sm font-semibold"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Global Cell Ratio</label>
-                <div className="flex rounded-lg bg-white p-1 border border-slate-200">
-                  <button
-                    type="button" onClick={() => setCellOrientation("landscape")}
-                    className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${cellOrientation === "landscape" ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-50"}`}
-                  >
-                    Landscape
-                  </button>
-                  <button
-                    type="button" onClick={() => setCellOrientation("portrait")}
-                    className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${cellOrientation === "portrait" ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-50"}`}
-                  >
-                    Portrait
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Action Tools Palette */}
-            <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Tool Palette (Select cells first)</label>
-              <div className="flex flex-wrap gap-2 mt-1">
-                <button
-                  type="button" onClick={() => applyStandardZoneToSelection("rack")}
-                  className="bg-white border border-slate-200 hover:bg-slate-50 px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 text-slate-700 shadow-2xs"
-                >
-                  <span className="w-2.5 h-2.5 bg-blue-600 rounded-xs"></span> Rack
-                </button>
-                <button
-                  type="button" onClick={() => applyStandardZoneToSelection("floor-stack")}
-                  className="bg-white border border-slate-200 hover:bg-slate-50 px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 text-slate-700 shadow-2xs"
-                >
-                  <span className="w-2.5 h-2.5 bg-emerald-600 rounded-xs"></span> FSA
-                </button>
-                <button
-                  type="button" onClick={() => applyStandardZoneToSelection("aisle")}
-                  className="bg-white border border-slate-200 hover:bg-slate-50 px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 text-slate-700 shadow-2xs"
-                >
-                  <span className="w-2.5 h-2.5 bg-slate-400 rounded-xs"></span> Aisle (Single)
-                </button>
-                <button
-                  type="button" onClick={() => applyStandardZoneToSelection("vacant")}
-                  className="bg-white border border-slate-200 hover:bg-slate-50 px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 text-slate-700 shadow-2xs"
-                >
-                  <span className="w-2.5 h-2.5 bg-white border border-slate-300 rounded-xs"></span> Clear
-                </button>
-                <button
-                  type="button" onClick={mergeSelectionToAisle}
-                  className="bg-slate-800 hover:bg-slate-950 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-2xs transition-colors"
-                >
-                  Merge to Aisle Block
-                </button>
-              </div>
+            <div className="flex gap-2">
+              <Select
+                className="flex-1"
+                placeholder="Select Tier"
+                value={selectedTier?.id}
+                onChange={async (id) => {
+                  const tier = tiers.find((t) => t.id === id);
+                  setSelectedTier(tier);
+                  await loadElements(tier.id);
+                  await checkTierBins(tier.id);
+                  clearFormState();
+                }}
+              >
+                {tiers.map((t) => (
+                  <Option key={t.id} value={t.id}>
+                    {t.name}
+                  </Option>
+                ))}
+              </Select>
             </div>
           </div>
 
-          {/* Seamless, Full-Width Fluid Blueprint Grid Box */}
-          <div className="w-full bg-slate-50 p-4 rounded-2xl border border-slate-200">
-            <div
-              className="grid gap-0 bg-slate-200 w-full mx-auto select-none border border-slate-300 overflow-hidden"
-              style={{
-                gridTemplateColumns: `repeat(${gridConfig.cols}, minmax(0, 1fr))`,
+          <Divider className="my-1" />
+
+          <div>
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+              {editingElementId ? "🛠️ Edit Mode Enabled" : "Add Layout Element"}
+            </div>
+
+            <label className="block text-xs text-gray-600 mb-1">
+              Element Type
+            </label>
+            <Select
+              className="w-full mb-3"
+              value={selectedType}
+              onChange={(val) => {
+                setSelectedType(val);
+                handleFieldChange("type", val);
               }}
             >
-              {gridRowsArray.map((_, rIndex) =>
-                gridColsArray.map((_, cIndex) => {
-                  const key = `${rIndex}-${cIndex}`;
-                  const cellState = singleCells[key];
-                  const mergeInfo = mergedMap[key];
-                  const selected = isCellSelected(rIndex, cIndex);
+              <Option value="rack">Standard Rack (rack)</Option>
+              <Option value="s-rack">Small Rack (s-rack)</Option>
+              <Option value="fsa">Floor Stack Area (fsa)</Option>
+              <Option value="entry">Dock Entry / Exit (entry)</Option>
+              <Option value="object">Custom Object / Lift (object)</Option>
+            </Select>
 
-                  if (mergeInfo && !mergeInfo.isOrigin) return null;
+            <label className="block text-xs text-gray-600 mb-1">
+              Element ID / Label
+            </label>
+            <Input
+              className="mb-3"
+              placeholder="e.g., R4"
+              value={elementData.id}
+              onChange={(e) => handleFieldChange("id", e.target.value)}
+            />
 
-                  let cellStyle = "bg-white text-slate-400 border border-slate-200 hover:bg-slate-50";
-                  let label = `Cell ${rIndex + 1}-${cIndex + 1}`;
-
-                  if (mergeInfo?.isOrigin) {
-                    cellStyle = "bg-slate-300 text-slate-800 font-bold border border-slate-400 shadow-inner";
-                    label = `AISLE BLOCK (${mergeInfo.data.size.cSpan}x${mergeInfo.data.size.rSpan})`;
-                  } else if (cellState === "rack") {
-                    cellStyle = "bg-blue-600 text-white font-bold border border-blue-700 shadow-sm";
-                    label = `RACK`;
-                  } else if (cellState === "floor-stack") {
-                    cellStyle = "bg-emerald-600 text-white font-bold border border-emerald-700 shadow-sm";
-                    label = `FSA`;
-                  } else if (cellState === "aisle") {
-                    cellStyle = "bg-slate-400 text-white font-bold border border-slate-500 shadow-sm";
-                    label = `AISLE`;
-                  }
-
-                  if (selected) {
-                    cellStyle = "bg-blue-100 border-2 border-blue-500 text-blue-700 font-medium z-10";
-                  }
-
-                  return (
-                    <div
-                      key={key}
-                      onMouseDown={() => handleCellMouseDown(rIndex, cIndex)}
-                      onMouseEnter={() => handleCellMouseEnter(rIndex, cIndex)}
-                      style={{
-                        gridRowEnd: mergeInfo?.isOrigin ? `span ${mergeInfo.data.size.rSpan}` : undefined,
-                        gridColumnEnd: mergeInfo?.isOrigin ? `span ${mergeInfo.data.size.cSpan}` : undefined,
-                      }}
-                      className={`${cellStyle} ${mergeInfo?.isOrigin ? "" : cellAspectRatio} flex flex-col items-center justify-center text-xs text-center p-1 cursor-crosshair transition-all overflow-hidden`}
-                    >
-                      <span className="opacity-95 text-[10px] font-bold tracking-tight truncate w-full px-0.5">{label}</span>
-                      <span className="text-[9px] opacity-40 block">[{rIndex + 1},{cIndex + 1}]</span>
-                    </div>
-                  );
-                })
-              )}
+            {/* POSITION FIELDS */}
+            <div className="grid grid-cols-2 gap-2 mb-3">
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">
+                  X Coordinate
+                </label>
+                <Input
+                  type="number"
+                  placeholder="X"
+                  value={elementData.x}
+                  onChange={(e) => handleFieldChange("x", e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">
+                  Y Coordinate
+                </label>
+                <Input
+                  type="number"
+                  placeholder="Y"
+                  value={elementData.y}
+                  onChange={(e) => handleFieldChange("y", e.target.value)}
+                />
+              </div>
             </div>
-          </div>
-        </section>
 
-        {/* FOOTER ACTIONS SUBMIT BAR */}
-        <div className="flex justify-end gap-3 pt-4 border-t border-slate-200">
-          <button
-            type="button" onClick={() => { setSingleCells({}); setMergedAisles([]); }}
-            className="px-5 py-2.5 rounded-xl text-sm font-semibold text-slate-600 hover:bg-slate-100 transition-colors"
-          >
-            Reset Design Canvas
-          </button>
-          <button
-            type="submit"
-            className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold shadow-sm transition-all"
-          >
-            Create Warehouse & Save Layout
-          </button>
+            {/* DYNAMIC FIELD TRACK 1 */}
+            {["rack", "s-rack", "fsa", "object"].includes(selectedType) && (
+              <>
+                <label className="block text-xs text-gray-600 mb-1">
+                  Operational Status
+                </label>
+                <Select
+                  className="w-full mb-3"
+                  value={elementData.status}
+                  onChange={(val) => handleFieldChange("status", val)}
+                >
+                  <Option value="vacant">Vacant</Option>
+                  <Option value="full">Full</Option>
+                  <Option value="maintenance">Maintenance</Option>
+                </Select>
+
+                <label className="block text-xs text-gray-600 mb-1">
+                  Orientation Flow
+                </label>
+                <Select
+                  className="w-full mb-3"
+                  value={elementData.orientation}
+                  onChange={(val) => handleFieldChange("orientation", val)}
+                >
+                  <Option value="vertical">Vertical</Option>
+                  <Option value="horizontal">Horizontal</Option>
+                </Select>
+              </>
+            )}
+
+            {/* DYNAMIC FIELD TRACK 2 */}
+            {selectedType === "object" && (
+              <div className="mb-3">
+                <label className="block text-xs text-gray-600 mb-1">
+                  Display Color
+                </label>
+                <div className="flex gap-2 items-center">
+                  <Input
+                    type="color"
+                    className="w-12 h-8 p-0 border-none cursor-pointer"
+                    value={elementData.color}
+                    onChange={(e) => handleFieldChange("color", e.target.value)}
+                  />
+                  <Input
+                    type="text"
+                    placeholder="#CDE6FE"
+                    value={elementData.color}
+                    onChange={(e) => handleFieldChange("color", e.target.value)}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* DYNAMIC FIELD TRACK 3 */}
+            {selectedType === "entry" && (
+              <div className="grid grid-cols-2 gap-2 mb-4">
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">
+                    Rotation (°)
+                  </label>
+                  <Select
+                    className="w-full"
+                    value={elementData.rotation}
+                    onChange={(val) => handleFieldChange("rotation", val)}
+                  >
+                    <Option value={0}>0° (North)</Option>
+                    <Option value={90}>90° (East)</Option>
+                    <Option value={180}>180° (South)</Option>
+                    <Option value={270}>270° (West)</Option>
+                  </Select>
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">
+                    Label X Offset
+                  </label>
+                  <Input
+                    type="number"
+                    placeholder="e.g. -22"
+                    value={elementData.textX}
+                    onChange={(e) => handleFieldChange("textX", e.target.value)}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* ACTION FOOTER MENU */}
+            {editingElementId ? (
+              <div className="flex flex-col gap-2 mt-4 p-2 bg-blue-50 border border-blue-200 rounded-md">
+                <Button
+                  type="primary"
+                  icon={<CheckOutlined />}
+                  block
+                  style={{ backgroundColor: "#22c55e", borderColor: "#22c55e" }}
+                  onClick={finishEditingElement}
+                >
+                  Finish Editing
+                </Button>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <Popconfirm
+                    title="Delete layout element?"
+                    description="This removes it permanently."
+                    onConfirm={() => deleteElement(editingElementId)}
+                    okText="Yes"
+                    cancelText="No"
+                  >
+                    <Button
+                      type="primary"
+                      danger
+                      icon={<DeleteOutlined />}
+                      block
+                    >
+                      Delete
+                    </Button>
+                  </Popconfirm>
+                  <Button
+                    icon={<CloseOutlined />}
+                    block
+                    onClick={handleCancelEditing}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <Button
+                type="primary"
+                block
+                onClick={addElement}
+                className="mt-2"
+                disabled={!selectedTier}
+              >
+                Add Layout Element
+              </Button>
+            )}
+          </div>
         </div>
-      </form>
+
+        {/* RIGHT CANVAS VISUALIZER */}
+        <div className="flex-1 bg-gray-200 relative overflow-hidden">
+          <MapCanvas
+            warehouse={selectedWarehouse}
+            tier={selectedTier}
+            elements={elements}
+            onElementSelect={handleElementSelect}
+          />
+        </div>
+      </div>
+
+      {/* CREATE / EDIT WAREHOUSE MODAL */}
+      <Modal
+        title={isEditWarehouseModal ? "Edit Warehouse Settings" : "Create New Warehouse"}
+        open={createModal}
+        footer={null}
+        centered
+        onCancel={() => setCreateModal(false)}
+        forceRender
+      >
+        <Form layout="vertical" form={form} onFinish={handleSaveWarehouse}>
+          <Form.Item
+            label="Warehouse Name"
+            name="name"
+            rules={[{ required: true, message: "Enter warehouse name" }]}
+          >
+            <Input />
+          </Form.Item>
+          <Form.Item label="Warehouse Code" name="code">
+            <Input readOnly />
+          </Form.Item>
+          <Form.Item label="Location" name="location">
+            <Input />
+          </Form.Item>
+          <Form.Item label="Warehouse Length (meters)" name="length">
+            <Input type="number" />
+          </Form.Item>
+          <Form.Item label="Warehouse Width (meters)" name="width">
+            <Input type="number" />
+          </Form.Item>
+          <Form.Item label="Warehouse Height (meters)" name="height">
+            <Input type="number" />
+          </Form.Item>
+
+          {!isEditWarehouseModal && (
+            <Form.Item label="Number of Tiers" name="tiers" initialValue={1}>
+              <Input type="number" min={1} />
+            </Form.Item>
+          )}
+
+          <Button type="primary" htmlType="submit" block>
+            {isEditWarehouseModal ? "Update Warehouse" : "Create Warehouse"}
+          </Button>
+        </Form>
+      </Modal>
+
+      {/* LAYOUT ELEMENTS MANAGER DRAWER */}
+      <Drawer
+        title={`Elements in ${selectedTier?.name || "Tier"}`}
+        placement="right"
+        width={520}
+        onClose={() => setElementDrawerOpen(false)}
+        open={elementDrawerOpen}
+      >
+        <Table
+          rowKey="id"
+          pagination={{ pageSize: 10 }}
+          dataSource={elements}
+          columns={[
+            {
+              title: "Label / ID",
+              dataIndex: ["metadata", "custom_label_id"],
+              key: "label",
+              render: (text, record) => (
+                <span className="font-semibold text-gray-800">
+                  {text || record.id.slice(0, 8)}
+                </span>
+              ),
+            },
+            {
+              title: "Type",
+              dataIndex: "type",
+              key: "type",
+              render: (type) => <Tag color="blue">{type.toUpperCase()}</Tag>,
+            },
+            {
+              title: "Pos (X, Y)",
+              key: "position",
+              render: (_, record) => `(${record.x}, ${record.y})`,
+            },
+            {
+              title: "Actions",
+              key: "actions",
+              render: (_, record) => (
+                <Space>
+                  <Button
+                    size="small"
+                    icon={<EditOutlined />}
+                    onClick={() => {
+                      handleElementSelect(record);
+                      setElementDrawerOpen(false);
+                    }}
+                  >
+                    Edit
+                  </Button>
+                  <Popconfirm
+                    title="Delete element?"
+                    onConfirm={() => deleteElement(record.id)}
+                    okText="Yes"
+                    cancelText="No"
+                  >
+                    <Button
+                      size="small"
+                      danger
+                      icon={<DeleteOutlined />}
+                    />
+                  </Popconfirm>
+                </Space>
+              ),
+            },
+          ]}
+        />
+      </Drawer>
+
+      {/* BIN MANAGER MODAL */}
+      <Modal
+        title="Bin Manager"
+        open={binManagerOpen}
+        width={900}
+        footer={null}
+        onCancel={() => setBinManagerOpen(false)}
+      >
+        <Table
+          rowKey="id"
+          pagination={false}
+          dataSource={binRows}
+          columns={[
+            {
+              title: (
+                <Checkbox
+                  checked={
+                    binRows.length > 0 && binRows.every((row) => row.selected)
+                  }
+                  indeterminate={
+                    binRows.some((row) => row.selected) &&
+                    !binRows.every((row) => row.selected)
+                  }
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setBinRows((prev) =>
+                      prev.map((row) => ({
+                        ...row,
+                        selected: checked,
+                      }))
+                    );
+                  }}
+                />
+              ),
+              render: (_, row) => (
+                <Checkbox
+                  disabled={row.binsCreated}
+                  checked={row.selected}
+                  onChange={(e) =>
+                    updateRow(row.id, "selected", e.target.checked)
+                  }
+                />
+              ),
+            },
+            {
+              title: "Location",
+              dataIndex: "label",
+            },
+            {
+              title: "Type",
+              dataIndex: "type",
+            },
+            {
+              title: "Levels",
+              render: (_, row) => (
+                <Input
+                  type="number"
+                  min={1}
+                  value={row.levels}
+                  onChange={(e) =>
+                    updateRow(row.id, "levels", Number(e.target.value))
+                  }
+                />
+              ),
+            },
+            {
+              title: "Bins / Level",
+              render: (_, row) => (
+                <Input
+                  type="number"
+                  min={1}
+                  value={row.binsPerLevel}
+                  onChange={(e) =>
+                    updateRow(row.id, "binsPerLevel", Number(e.target.value))
+                  }
+                />
+              ),
+            },
+            {
+              title: "Bin Status",
+              render: (_, row) =>
+                row.binsCreated ? (
+                  <span className="text-green-600 font-semibold">
+                    ✓ Created
+                  </span>
+                ) : (
+                  <span className="text-gray-400">Not Created</span>
+                ),
+            },
+          ]}
+        />
+
+        <div className="mt-4 flex justify-end">
+          <Button
+            type="primary"
+            disabled={!canGenerateBins()}
+            onClick={generateAndSaveBins}
+          >
+            Generate & Save
+          </Button>
+        </div>
+      </Modal>
     </div>
   );
 }
